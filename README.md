@@ -13,7 +13,9 @@ _Prévia com um repositório fictício._
 - Histórico de todas as branches, grafo de parentesco e busca por mensagem, autor, hash ou referência.
 - Diff unificado no painel esquerdo ao selecionar um arquivo; voltar ao histórico preserva a busca e a posição da lista.
 - Working tree e stage com rolagem independente, stage/unstage por arquivo ou em lote e seleção automática do arquivo movido.
-- Commits com mensagem, preservação do rascunho em caso de erro e detalhes dos commits anteriores.
+- Commits com rascunhos salvos por repositório e restaurados após reiniciar; o rascunho é limpo após um commit bem-sucedido.
+- Stage/unstage por hunk em arquivos de texto rastreados e modificados, com rejeição de prévias desatualizadas.
+- Orientação para divergência, upstream ausente, autenticação e operações Git em andamento, preservando os diagnósticos originais.
 - Criação e troca de branches locais; fetch, pull com fast-forward e push.
 - Oito repositórios recentes, atualização ao retornar à janela e sidebar redimensionável com largura salva.
 - Seis temas, interface em inglês ou português do Brasil e tamanho do texto configurável.
@@ -66,7 +68,7 @@ O script `scripts/tauri.mjs` usa o Rust do `PATH`. Se existir uma instalação i
 
 1. Abra um repositório local e consulte o histórico ou as alterações atuais.
 2. Selecione um arquivo para revisar o diff no painel esquerdo.
-3. Use **+** para preparar o arquivo ou **−** para retirá-lo do stage.
+3. Use **+** para preparar o arquivo ou **−** para retirá-lo do stage. Em arquivos de texto modificados, use **Preparar hunk / Stage hunk** ou **Retirar hunk do stage / Unstage hunk** no cabeçalho do trecho para mover apenas aquela alteração.
 4. Escreva uma mensagem e faça o commit dos arquivos preparados.
 5. Sincronize com **Fetch**, **Pull** ou **Push**, quando necessário.
 
@@ -113,7 +115,7 @@ e2e/                  Testes de interface com backend simulado
 
 O frontend chama quatro comandos Tauri: `repository`, `changes`, `diff` e `operate`. O backend executa o Git diretamente, sem interpolação de shell, usa pathspecs literais para arquivos e serializa as operações. Hooks e assinatura de commits seguem a configuração do Git.
 
-Repositórios recentes e preferências ficam no armazenamento local do aplicativo. O identificador interno `dev.local.ramo` e a chave `ramo.recents` foram mantidos para preservar os dados das versões iniciais; o nome do produto, do pacote e do executável é Gitloom.
+Repositórios recentes, preferências e rascunhos de commit por caminho canônico de repositório ficam no armazenamento local do aplicativo. Rascunhos são salvos ao editar, restaurados ao abrir o repositório e removidos após commit bem-sucedido; falhas de armazenamento exibem um aviso. O identificador interno `dev.local.ramo` e a chave `ramo.recents` foram mantidos para preservar os dados das versões iniciais; o nome do produto, do pacote e do executável é Gitloom.
 
 ## Verificação
 
@@ -149,8 +151,9 @@ npm run format
 
 ## Limitações da V1
 
-- Stage por arquivo; seleção de linhas ou hunks ainda não está disponível.
-- Sem descarte de alterações, reset destrutivo, force push ou editor de conflitos. Resolva conflitos externamente e prepare os arquivos antes do commit.
+- Stage por hunk limitado a texto UTF-8 em arquivos rastreados e modificados, sem renomeação, conflito ou mudança de modo. Arquivos novos, removidos, binários e especiais usam stage por arquivo; seleção de linhas ainda não está disponível.
+- Prévia desatualizada é rejeitada ao mover hunks; revise o diff atualizado antes de tentar novamente.
+- Sem descarte de alterações, reset destrutivo, force push ou editor de conflitos. Resolva conflitos externamente e prepare os arquivos antes do commit. O app identifica merge, rebase, cherry-pick, revert e aplicação de patches (`git am`) em andamento. Merge pode ser concluído com commit no app; as demais operações devem ser continuadas ou abortadas no terminal, seguindo a orientação exibida. Troca/criação de branches e pull ficam bloqueados durante essas operações.
 - Pull usa `--ff-only`; históricos divergentes precisam ser reconciliados pelo Git.
 - Sem login OAuth ou terminal interativo para senha. A autenticação depende da configuração existente do Git.
 - Histórico inicial de 400 commits, com paginação até 5.000. A busca considera apenas os commits carregados.

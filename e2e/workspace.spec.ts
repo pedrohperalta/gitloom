@@ -94,6 +94,9 @@ test.beforeEach(async ({ page }, testInfo) => {
       ahead: 0,
       behind: 0,
       hasMore: false,
+      upstream: "origin/main",
+      operation: null as string | null,
+      headDetached: false,
     };
     if (new URLSearchParams(location.search).has("many-files")) {
       repo.files.push(
@@ -106,13 +109,45 @@ test.beforeEach(async ({ page }, testInfo) => {
         })),
       );
     }
+    const params = new URLSearchParams(location.search);
+    if (params.has("git-state")) {
+      repo.operation = params.get("git-state");
+      repo.files[0].conflict = true;
+    }
+    if (params.has("diverged")) {
+      repo.ahead = 2;
+      repo.behind = 3;
+    }
+    if (params.has("no-upstream")) repo.upstream = "";
+    const hunkStaged = [false, false];
+    let stale = params.has("stale-hunk");
+    const hunkPatch = (staged: boolean) => {
+      const hunks = [
+        "@@ -1,1 +1,1 @@\n-old\n+first change\n",
+        "@@ -20,1 +20,1 @@\n-old second\n+second change\n",
+      ];
+      return (
+        "diff --git a/src/App.tsx b/src/App.tsx\nindex abcdef0..1234567 100644\n--- a/src/App.tsx\n+++ b/src/App.tsx\n" +
+        hunks.filter((_, i) => hunkStaged[i] === staged).join("")
+      );
+    };
     localStorage.setItem(
       "ramo.recents",
-      JSON.stringify([{ path: repo.path, name: repo.name }]),
+      JSON.stringify([
+        { path: repo.path, name: repo.name },
+        ...(params.has("draft-tests")
+          ? [{ path: "/tmp/other-project", name: "other-project" }]
+          : []),
+      ]),
     );
     (window as any).__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args: any) => {
-        if (cmd === "repository") return structuredClone(repo);
+        if (cmd === "repository")
+          return structuredClone({
+            ...repo,
+            path: args.path,
+            name: args.path.split("/").pop(),
+          });
         if (cmd === "changes")
           return [
             {
@@ -123,10 +158,26 @@ test.beforeEach(async ({ page }, testInfo) => {
               conflict: false,
             },
           ];
+        if (cmd === "diff" && params.has("hunk-tests"))
+          return hunkPatch(args.staged);
         if (cmd === "diff")
           return 'diff --git a/src/App.tsx b/src/App.tsx\n--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,5 @@\n import React from "react";\n-export default function App() {\n+export default function App() {\n+  const title = "Seu Git, com clareza";\n   return <main>Gitloom</main>;\n }';
         if (cmd === "operate") {
           const a = args.action;
+          if (a.kind === "push" && params.has("auth-error"))
+            throw "fatal: Authentication failed for remote";
+          if (a.kind === "applyHunk") {
+            if (stale) {
+              stale = false;
+              throw "staleHunk";
+            }
+            const available = hunkStaged
+              .map((value, i) => ({ value, i }))
+              .filter((h) => h.value === a.staged);
+            hunkStaged[available[a.hunk].i] = !a.staged;
+            repo.files[0].index = hunkStaged.some(Boolean) ? "M" : " ";
+            repo.files[0].worktree = hunkStaged.every(Boolean) ? " " : "M";
+          }
           if (a.kind === "stage")
             repo.files.forEach((f) => {
               if (a.files.includes(f.path)) {
@@ -595,4 +646,184 @@ test("preferences: spacing scales with text and sidebar resizing persists within
   await expect(sidebar).toHaveCSS("width", "410px");
   await divider.dblclick();
   await expect(sidebar).toHaveCSS("width", "342px");
+});
+
+test("drafts survive repository switches and reload, and clear only after a successful commit", async ({
+  page,
+}) => {
+  await page.goto("/?draft-tests");
+  const first = page.getByRole("button", {
+    name: "gitloom-playground",
+    exact: true,
+  });
+  const other = page.getByRole("button", {
+    name: "other-project",
+    exact: true,
+  });
+  await first.click();
+  await page.getByLabel("Seu próximo commit").fill("first draft");
+  await other.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue("");
+  await page.getByLabel("Seu próximo commit").fill("other draft");
+  await first.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "first draft",
+  );
+  await page.reload();
+  await first.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "first draft",
+  );
+  await page
+    .getByRole("button", {
+      name: "Adicionar ao stage src/App.tsx",
+      exact: true,
+    })
+    .click();
+  await page.getByLabel("Seu próximo commit").fill("fail preserved");
+  await page.getByRole("button", { name: "Fazer commit", exact: true }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.reload();
+  await first.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "fail preserved",
+  );
+  await page
+    .getByRole("button", {
+      name: "Adicionar ao stage src/App.tsx",
+      exact: true,
+    })
+    .click();
+  await page.getByLabel("Seu próximo commit").fill("successful commit");
+  await page.getByRole("button", { name: "Fazer commit", exact: true }).click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue("");
+  await page.reload();
+  await first.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue("");
+  await other.click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "other draft",
+  );
+});
+
+test("hunks can be staged and unstaged independently, with stale preview recovery", async ({
+  page,
+}) => {
+  await page.goto("/?hunk-tests&stale-hunk");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Preparar hunk", exact: true }),
+  ).toHaveCount(2);
+  await page
+    .getByRole("button", { name: "Preparar hunk", exact: true })
+    .last()
+    .click();
+  await expect(page.getByRole("alert")).toContainText("arquivo mudou");
+  await expect(
+    page.getByRole("button", { name: "Preparar hunk", exact: true }),
+  ).toHaveCount(2);
+  await page
+    .getByRole("button", { name: "Preparar hunk", exact: true })
+    .last()
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Preparar hunk", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByLabel("Diff do arquivo")).toContainText(
+    "first change",
+  );
+  await expect(page.getByLabel("Diff do arquivo")).not.toContainText(
+    "second change",
+  );
+  await page
+    .getByRole("region", { name: "No stage", exact: true })
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await expect(page.getByLabel("Diff do arquivo")).toContainText(
+    "second change",
+  );
+  await page.screenshot({ path: "test-results/hunks.png" });
+  await page
+    .getByRole("button", { name: "Retirar hunk do stage", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Retirar do stage src/App.tsx",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+
+for (const [state, command] of [
+  ["merge", "git merge --abort"],
+  ["rebase", "git rebase --continue"],
+  ["cherryPick", "git cherry-pick --continue"],
+  ["revert", "git revert --continue"],
+]) {
+  test(`Git state: ${state} explains recovery and blocks branch switching`, async ({
+    page,
+  }) => {
+    await page.goto(`/?git-state=${state}`);
+    await page
+      .getByRole("button", { name: "gitloom-playground", exact: true })
+      .click();
+    await expect(page.locator(".repository-guidance")).toContainText(command);
+    if (state === "rebase")
+      await page.screenshot({ path: "test-results/rebase-guidance.png" });
+    await expect(
+      page.getByRole("button", { name: "feature/diff-view", exact: true }),
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: /^Pull/ })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Fazer commit", exact: true }),
+    ).toBeDisabled();
+  });
+}
+
+test("divergence, missing upstream and authentication failures explain next steps", async ({
+  page,
+}) => {
+  await page.goto("/?diverged&no-upstream&auth-error");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(page.locator(".repository-guidance")).toContainText(
+    "histórico local e remoto divergiu",
+  );
+  await expect(page.locator(".repository-guidance")).toContainText(
+    "não tem upstream",
+  );
+  await expect(page.getByRole("button", { name: /^Pull/ })).toBeDisabled();
+  await page.getByRole("button", { name: /^Push/ }).click();
+  await expect(page.getByRole("alert")).toContainText("SSH agent");
+  await expect(page.getByRole("alert")).toContainText(
+    "fatal: Authentication failed for remote",
+  );
+});
+
+test("draft storage failure keeps the typed message and shows a warning", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("gitloom.draft:"))
+        throw new DOMException("Storage full", "QuotaExceededError");
+      original.call(this, key, value);
+    };
+  });
+  await page.getByLabel("Seu próximo commit").fill("important unsaved draft");
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "important unsaved draft",
+  );
+  await expect(page.getByRole("status")).toContainText("rascunho");
 });

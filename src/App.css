@@ -1684,3 +1684,26 @@ kbd {
 .text-scale-control .flat-select > svg {
   right: 6px;
 }
+
+.hunk-action {
+  position: sticky;
+  right: 8px;
+  margin-left: 12px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  cursor: pointer;
+}
+.hunk-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.banner p {
+  margin: 4px 0;
+}
+.repository-guidance {
+  flex-shrink: 0;
+}

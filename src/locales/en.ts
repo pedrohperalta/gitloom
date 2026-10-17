@@ -169,5 +169,47 @@ export const en = {
   push: "Push",
   commitRef: "Commit {hash}",
   gitDiagnostics: "Git diagnostics are shown in their original language.",
+  draftWarning:
+    "Your draft is kept in this window, but could not be saved on this device. Keep the window open or copy the message before leaving.",
+  stageHunk: "Stage hunk",
+  unstageHunk: "Unstage hunk",
+  staleHunk:
+    "The file changed since this preview was loaded. Review the refreshed diff and try again.",
+  hunkUnavailable:
+    "Hunks are available for modified tracked text files without renames or mode changes. Use the file action for this change.",
+  finishOperation:
+    "Finish or abort the current Git operation in your terminal, then refresh the repository.",
+  missingUpstream:
+    "This branch has no upstream. The first push sets it using origin or the only remote. For another destination, configure tracking in Git. Pull requires an upstream.",
+  authGuidance:
+    "Check this remote’s SSH agent or Git credential helper in your terminal, then retry. Gitloom uses your existing Git authentication.",
+  divergenceGuidance:
+    "Local and remote history have diverged, or the push requires an update. Fetch, inspect the history, and reconcile with merge or rebase in your terminal before retrying. Pull only allows fast-forward.",
+  dirtyGuidance:
+    "Local changes would be overwritten. Commit them or stash them in your terminal before switching branches or pulling.",
+  conflictGuidance:
+    "Resolve conflicted files in your editor, review the result, and stage the resolved files. If an operation is in progress, follow its instructions below.",
+  mergeGuidance:
+    "Merge in progress. Resolve and stage any conflicts, then commit here to finish; to abort, use git merge --abort in your terminal.",
+  rebaseGuidance:
+    "Rebase in progress. Resolve and stage conflicts, then run git rebase --continue in your terminal; to abort, use git rebase --abort. Refresh afterward.",
+  cherryPickGuidance:
+    "Cherry-pick in progress. Resolve and stage conflicts, then run git cherry-pick --continue in your terminal; to abort, use git cherry-pick --abort. Refresh afterward.",
+  revertGuidance:
+    "Revert in progress. Resolve and stage conflicts, then run git revert --continue in your terminal; to abort, use git revert --abort. Refresh afterward.",
+  detachedGuidance:
+    "Detached HEAD: create a branch before committing to keep new commits easy to find.",
+  identityGuidance:
+    "Configure user.name and user.email for this repository in Git, then retry the commit. Your draft is preserved.",
+  signingGuidance:
+    "Check your Git signing key and signing agent in your terminal, then retry. Your draft is preserved.",
+  lockGuidance:
+    "Another Git operation may be running. Wait for it to finish and refresh. If the lock remains, inspect it in your terminal before removing it.",
+  connectionGuidance:
+    "Check your connection and remote access in your terminal. Refresh to verify the result before retrying an operation that may have completed.",
+  nonUtf8Diff:
+    "This diff contains non-UTF-8 text. Review it in your editor and use staging by file.",
+  amGuidance:
+    "Patch application in progress. Resolve and stage conflicts, then run git am --continue in your terminal; to abort, use git am --abort. Refresh afterward.",
 } as const;
 export type MessageKey = keyof typeof en;

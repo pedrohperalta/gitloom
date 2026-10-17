@@ -41,6 +41,8 @@ import {
 import { textScales, usePreferences } from "./preferences";
 import { SidebarDivider } from "./SidebarDivider";
 import { SettingsDialog } from "./SettingsDialog";
+import { readDraft, saveDraft } from "./drafts";
+import { errorGuidance } from "./gitGuidance";
 import "./App.css";
 
 type Recent = { path: string; name: string };
@@ -152,6 +154,16 @@ function App() {
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [message, setMessage] = useState("");
+  const [draftWarning, setDraftWarning] = useState(false);
+  const updateMessage = (value: string) => {
+    setMessage(value);
+    try {
+      saveDraft(activePath.current, value);
+      setDraftWarning(false);
+    } catch {
+      setDraftWarning(true);
+    }
+  };
   const [branchDialog, setBranchDialog] = useState(false);
   const [newBranch, setNewBranch] = useState("");
   const [pathDialog, setPathDialog] = useState(false);
@@ -167,6 +179,18 @@ function App() {
   const unstaged = repo?.files.filter(changed) || [];
   const staged = repo?.files.filter(stagedFile) || [];
   const conflict = repo?.files.some((f) => f.conflict);
+  const operationBlocksCommit = !!repo?.operation && repo.operation !== "merge";
+  const operationBlocksNavigation = !!repo?.operation;
+  const guidance = errorGuidance(error);
+  const hunkActions =
+    !commit &&
+    !!selection &&
+    !selection.file.conflict &&
+    !selection.file.originalPath &&
+    (selection.staged ? selection.file.index : selection.file.worktree) ===
+      "M" &&
+    /^index [^\n]+ 100(?:644|755)$/m.test(patch) &&
+    !/^(?:old mode|new mode) /m.test(patch);
   const graph = useMemo(
     () => layoutGraph(repo?.commits || []),
     [repo?.commits],
@@ -216,13 +240,19 @@ function App() {
       setError("");
       setNotice(null);
       try {
-        await load(path, 400);
+        const opened = await load(path, 400);
         setLimit(400);
         setCommit(null);
         setSelection(null);
         setPatch("");
         setQuery("");
-        setMessage("");
+        try {
+          setMessage(readDraft(opened.path));
+          setDraftWarning(false);
+        } catch {
+          setMessage("");
+          setDraftWarning(true);
+        }
         setPathDialog(false);
       } catch (e) {
         setError(String(e));
@@ -280,6 +310,12 @@ function App() {
         succeeded = true;
         if (action.kind === "commit") {
           setMessage("");
+          try {
+            saveDraft(repo.path, "");
+            setDraftWarning(false);
+          } catch {
+            setDraftWarning(true);
+          }
           setSelection(null);
         }
         if (action.kind === "switch" || action.kind === "createBranch") {
@@ -381,7 +417,8 @@ function App() {
         message.trim() &&
         staged.length &&
         !commit &&
-        !conflict
+        !conflict &&
+        !operationBlocksCommit
       ) {
         event.preventDefault();
         void act({ kind: "commit", message }, "Fazendo commit");
@@ -405,6 +442,7 @@ function App() {
     staged.length,
     commit,
     conflict,
+    operationBlocksCommit,
     setPreferences,
   ]);
   useEffect(() => {
@@ -586,7 +624,7 @@ function App() {
                 className="icon-button"
                 title={t("Criar branch")}
                 aria-label={t("Criar branch")}
-                disabled={!!busy}
+                disabled={!!busy || operationBlocksNavigation}
                 onClick={() => setBranchDialog(true)}
               >
                 <Plus size={15} />
@@ -599,7 +637,7 @@ function App() {
                   <button
                     key={b.name}
                     className={`branch ${b.current ? "current" : ""}`}
-                    disabled={!!busy || b.current}
+                    disabled={!!busy || b.current || operationBlocksNavigation}
                     onClick={() =>
                       void act(
                         { kind: "switch", branch: b.name },
@@ -685,7 +723,14 @@ function App() {
                   <RefreshCw size={14} /> Fetch
                 </button>
                 <button
-                  disabled={!!busy || !repo.remotes.length}
+                  disabled={
+                    !!busy ||
+                    !repo.remotes.length ||
+                    operationBlocksNavigation ||
+                    repo.headDetached ||
+                    !repo.upstream ||
+                    conflict
+                  }
                   onClick={() =>
                     void act({ kind: "pull" }, "Recebendo commits")
                   }
@@ -723,7 +768,10 @@ function App() {
           <div role="alert" className="banner error">
             <div>
               <strong> {t("Não foi possível concluir a operação")} </strong>
-              <pre>{localizeBackendMessage(error, preferences.language)}</pre>
+              {guidance && <p>{t(guidance)}</p>}
+              {!guidance || guidance !== error ? (
+                <pre>{localizeBackendMessage(error, preferences.language)}</pre>
+              ) : null}
             </div>
             <button
               className="icon-button"
@@ -734,6 +782,45 @@ function App() {
             </button>
           </div>
         )}
+        {draftWarning && (
+          <div role="status" className="banner">
+            <p>{t("draftWarning")}</p>
+          </div>
+        )}
+        {repo &&
+          (repo.operation ||
+            conflict ||
+            repo.headDetached ||
+            (repo.ahead > 0 && repo.behind > 0) ||
+            (!repo.upstream && repo.remotes.length > 0)) && (
+            <div role="status" className="banner repository-guidance">
+              <div>
+                {repo.operation && (
+                  <p>
+                    {t(
+                      (
+                        {
+                          merge: "mergeGuidance",
+                          rebase: "rebaseGuidance",
+                          cherryPick: "cherryPickGuidance",
+                          revert: "revertGuidance",
+                          am: "amGuidance",
+                        } as const
+                      )[repo.operation],
+                    )}
+                  </p>
+                )}
+                {conflict && <p>{t("conflictGuidance")}</p>}
+                {repo.headDetached && <p>{t("detachedGuidance")}</p>}
+                {repo.ahead > 0 && repo.behind > 0 && (
+                  <p>{t("divergenceGuidance")}</p>
+                )}
+                {!repo.upstream && repo.remotes.length > 0 && (
+                  <p>{t("missingUpstream")}</p>
+                )}
+              </div>
+            </div>
+          )}
         {!repo ? (
           <div className="welcome">
             <div className="welcome-tag">
@@ -803,7 +890,7 @@ function App() {
               </div>
               <button
                 className="quiet-button"
-                disabled={!!busy}
+                disabled={!!busy || operationBlocksNavigation}
                 onClick={() => setBranchDialog(true)}
               >
                 <Plus size={14} /> {t("Nova branch")}{" "}
@@ -994,6 +1081,35 @@ function App() {
                             <span className="line-number">{line.old}</span>
                             <span className="line-number">{line.next}</span>
                             <code>{line.text || " "}</code>
+                            {line.kind === "hunk" && hunkActions && (
+                              <button
+                                className="hunk-action"
+                                disabled={!!busy || loadingDiff}
+                                onClick={() =>
+                                  void act(
+                                    {
+                                      kind: "applyHunk",
+                                      file: selection.file.path,
+                                      staged: selection.staged,
+                                      expectedDiff: patch,
+                                      hunk: diffLines
+                                        .slice(0, i)
+                                        .filter((l) => l.kind === "hunk")
+                                        .length,
+                                    },
+                                    selection.staged
+                                      ? "Retirando do stage"
+                                      : "Adicionando ao stage",
+                                  )
+                                }
+                              >
+                                {t(
+                                  selection.staged
+                                    ? "unstageHunk"
+                                    : "stageHunk",
+                                )}
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1172,7 +1288,7 @@ function App() {
                       ref={messageRef}
                       placeholder={t("O que mudou?")}
                       value={message}
-                      onChange={(e) => setMessage(e.target.value)}
+                      onChange={(e) => updateMessage(e.target.value)}
                       maxLength={16000}
                       disabled={!!busy}
                     />
@@ -1192,7 +1308,8 @@ function App() {
                           !!busy ||
                           !message.trim() ||
                           !staged.length ||
-                          conflict
+                          conflict ||
+                          operationBlocksCommit
                         }
                         type="submit"
                       >

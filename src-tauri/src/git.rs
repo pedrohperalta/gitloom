@@ -26,6 +26,14 @@ fn drain(mut input: impl Read) -> Vec<u8> {
     output
 }
 fn run(root: &Path, args: &[&str], input: Option<&str>) -> Result<String, String> {
+    run_output(root, args, input, false)
+}
+fn run_output(
+    root: &Path,
+    args: &[&str],
+    input: Option<&str>,
+    strict: bool,
+) -> Result<String, String> {
     let mut command = Command::new(git_binary());
     command
         .current_dir(root)
@@ -81,6 +89,9 @@ fn run(root: &Path, args: &[&str], input: Option<&str>) -> Result<String, String
     }
     if stdout.len() as u64 > MAX_OUTPUT {
         return Err("Resultado muito grande (limite de 12 MB). Selecione um arquivo menor.".into());
+    }
+    if strict {
+        return String::from_utf8(stdout).map_err(|_| "nonUtf8Diff".into());
     }
     Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
@@ -175,7 +186,39 @@ pub struct Repository {
     pub ahead: usize,
     pub behind: usize,
     pub has_more: bool,
+    pub upstream: Option<String>,
+    pub operation: Option<String>,
+    pub head_detached: bool,
 }
+fn operation(root: &Path) -> Result<Option<String>, String> {
+    let directory = run(root, &["rev-parse", "--absolute-git-dir"], None)?;
+    let directory = Path::new(directory.trim_end_matches('\n'));
+    for (marker, state) in [
+        ("rebase-merge", "rebase"),
+        ("rebase-apply/applying", "am"),
+        ("rebase-apply", "rebase"),
+        ("MERGE_HEAD", "merge"),
+        ("CHERRY_PICK_HEAD", "cherryPick"),
+        ("REVERT_HEAD", "revert"),
+    ] {
+        if directory.join(marker).exists() {
+            return Ok(Some(state.into()));
+        }
+    }
+    // A multi-commit sequence can remain active after its current conflict was committed.
+    if let Ok(todo) = std::fs::read_to_string(directory.join("sequencer/todo")) {
+        for line in todo.lines() {
+            if line.starts_with("pick ") {
+                return Ok(Some("cherryPick".into()));
+            }
+            if line.starts_with("revert ") {
+                return Ok(Some("revert".into()));
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
     let root = root(path)?;
     let limit = limit.clamp(50, 5000);
@@ -241,6 +284,10 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
     }
     let has_more = commits.len() > limit;
     commits.truncate(limit);
+    let upstream = run(&root, &["rev-parse", "--abbrev-ref", "@{upstream}"], None)
+        .ok()
+        .map(|value| value.trim().to_owned());
+    let head_detached = run(&root, &["symbolic-ref", "-q", "HEAD"], None).is_err();
     let counts = run(
         &root,
         &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
@@ -266,6 +313,9 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
         ahead: counts.next().unwrap_or(0),
         behind: counts.next().unwrap_or(0),
         has_more,
+        upstream,
+        operation: operation(&root)?,
+        head_detached,
     })
 }
 pub fn changes(path: &str, commit: Option<&str>) -> Result<Vec<FileChange>, String> {
@@ -360,28 +410,121 @@ pub fn diff(path: &str, file: &str, staged: bool, commit: Option<&str>) -> Resul
                 .collect::<String>()
         ));
     }
-    let mut args = vec!["diff", "--no-ext-diff", "--no-textconv", "--no-renames"];
+    let mut args = vec![
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "--no-color",
+        "--no-relative",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--unified=3",
+    ];
     if staged {
         args.push("--cached");
     }
     args.extend(["--", file]);
-    run(&root, &args, None)
+    run_output(&root, &args, None, true)
 }
 #[derive(Deserialize, Debug)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Action {
-    Stage { files: Vec<String> },
-    Unstage { files: Vec<String> },
-    Commit { message: String },
-    Switch { branch: String },
-    CreateBranch { branch: String },
+    Stage {
+        files: Vec<String>,
+    },
+    Unstage {
+        files: Vec<String>,
+    },
+    Commit {
+        message: String,
+    },
+    Switch {
+        branch: String,
+    },
+    CreateBranch {
+        branch: String,
+    },
+    ApplyHunk {
+        file: String,
+        staged: bool,
+        expected_diff: String,
+        hunk: usize,
+    },
     Fetch,
     Pull,
     Push,
 }
+fn apply_hunk(
+    path: &str,
+    file: &str,
+    staged: bool,
+    expected: &str,
+    hunk: usize,
+) -> Result<String, String> {
+    file_path(file)?;
+    let root = root(path)?;
+    let status = parse_status(&run(
+        &root,
+        &["status", "--porcelain=v1", "-z", "--", file],
+        None,
+    )?);
+    let eligible = status.iter().any(|f| {
+        f.path == file
+            && !f.conflict
+            && f.original_path.is_none()
+            && (if staged { &f.index } else { &f.worktree }) == "M"
+    });
+    if !eligible {
+        return Err("hunkUnavailable".into());
+    }
+    let current = diff(path, file, staged, None)?;
+    if current != expected {
+        return Err("staleHunk".into());
+    }
+    // Build the patch only from Git's current output, never from caller-provided headers.
+    let lines: Vec<_> = current.split_inclusive('\n').collect();
+    let starts: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| line.starts_with("@@ ").then_some(i))
+        .collect();
+    let first = *starts.first().ok_or("hunkUnavailable")?;
+    if lines[..first]
+        .iter()
+        .any(|line| line.starts_with("old mode ") || line.starts_with("new mode "))
+        || !lines[..first].iter().any(|line| {
+            line.starts_with("index ")
+                && (line.trim_end().ends_with(" 100644") || line.trim_end().ends_with(" 100755"))
+        })
+    {
+        return Err("hunkUnavailable".into());
+    }
+    let start = *starts.get(hunk).ok_or("hunkUnavailable")?;
+    let end = starts.get(hunk + 1).copied().unwrap_or(lines.len());
+    let patch = lines[..first].concat() + &lines[start..end].concat();
+    let mut args = vec!["apply", "--cached", "--whitespace=nowarn"];
+    if staged {
+        args.push("--reverse");
+    }
+    // git apply checks and updates the index atomically; the working tree is untouched.
+    args.push("-");
+    run(&root, &args, Some(&patch))
+}
+
 pub fn operate(path: &str, action: Action) -> Result<String, String> {
     let root = root(path)?;
     match action {
+        Action::ApplyHunk {
+            file,
+            staged,
+            expected_diff,
+            hunk,
+        } => apply_hunk(path, &file, staged, &expected_diff, hunk),
         Action::Stage { files } | Action::Unstage { files } if files.is_empty() => {
             Err("Selecione um arquivo".into())
         }
@@ -419,18 +562,38 @@ pub fn operate(path: &str, action: Action) -> Result<String, String> {
                     "Resolva os conflitos e adicione os arquivos antes de fazer commit.".into(),
                 );
             }
+            if matches!(
+                operation(&root)?.as_deref(),
+                Some("rebase" | "cherryPick" | "revert" | "am")
+            ) {
+                return Err("finishOperation".into());
+            }
             run(&root, &["commit", "-F", "-"], Some(&message))
         }
         Action::Switch { branch } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
             run(&root, &["check-ref-format", "--branch", &branch], None)?;
             run(&root, &["switch", "--end-of-options", &branch], None)
         }
         Action::CreateBranch { branch } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
             run(&root, &["check-ref-format", "--branch", &branch], None)?;
             run(&root, &["switch", "-c", &branch], None)
         }
         Action::Fetch => run(&root, &["fetch", "--all"], None),
-        Action::Pull => run(&root, &["pull", "--ff-only"], None),
+        Action::Pull => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            if run(&root, &["rev-parse", "--abbrev-ref", "@{upstream}"], None).is_err() {
+                return Err("missingUpstream".into());
+            }
+            run(&root, &["pull", "--ff-only"], None)
+        }
         Action::Push => {
             if run(&root, &["rev-parse", "--abbrev-ref", "@{upstream}"], None).is_ok() {
                 return run(&root, &["push"], None);
@@ -763,5 +926,210 @@ mod tests {
             run(second.path(), &["rev-parse", "HEAD"], None).unwrap(),
             head
         );
+    }
+    fn separated_changes() -> (TempDir, String) {
+        let dir = setup();
+        let original = (1..=40).map(|n| format!("line {n}\n")).collect::<String>();
+        write(&dir, "space [a].txt", &original);
+        stage(&dir, &["space [a].txt"]);
+        commit(&dir, "base");
+        let modified = original
+            .replace("line 2\n", "first change\nextra line\n")
+            .replace("line 30\n", "second change\n");
+        write(&dir, "space [a].txt", &modified);
+        (dir, modified)
+    }
+
+    #[test]
+    fn partial_stage_and_reverse_preserve_other_hunks_and_worktree() {
+        let (dir, modified) = separated_changes();
+        let patch = diff(path(&dir), "space [a].txt", false, None).unwrap();
+        assert_eq!(patch.lines().filter(|l| l.starts_with("@@ ")).count(), 2);
+        apply_hunk(path(&dir), "space [a].txt", false, &patch, 1).unwrap();
+        let cached = diff(path(&dir), "space [a].txt", true, None).unwrap();
+        assert!(cached.contains("+second change"));
+        assert!(!cached.contains("+first change"));
+        let unstaged = diff(path(&dir), "space [a].txt", false, None).unwrap();
+        assert!(unstaged.contains("+first change"));
+        assert!(!unstaged.contains("+second change"));
+        apply_hunk(path(&dir), "space [a].txt", false, &unstaged, 0).unwrap();
+        let cached = diff(path(&dir), "space [a].txt", true, None).unwrap();
+        apply_hunk(path(&dir), "space [a].txt", true, &cached, 1).unwrap();
+        let cached = diff(path(&dir), "space [a].txt", true, None).unwrap();
+        assert!(cached.contains("+first change"));
+        assert!(!cached.contains("+second change"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("space [a].txt")).unwrap(),
+            modified
+        );
+    }
+
+    #[test]
+    fn rejects_stale_invalid_and_forged_hunks_without_changing_index() {
+        let (dir, modified) = separated_changes();
+        let patch = diff(path(&dir), "space [a].txt", false, None).unwrap();
+        write(&dir, "space [a].txt", &(modified + "external edit\n"));
+        assert_eq!(
+            apply_hunk(path(&dir), "space [a].txt", false, &patch, 0).unwrap_err(),
+            "staleHunk"
+        );
+        let fresh = diff(path(&dir), "space [a].txt", false, None).unwrap();
+        assert!(apply_hunk(path(&dir), "space [a].txt", false, &fresh, 999).is_err());
+        assert!(
+            apply_hunk(
+                path(&dir),
+                "space [a].txt",
+                false,
+                &fresh.replace("space", "outside"),
+                0
+            )
+            .is_err()
+        );
+        assert!(apply_hunk(path(&dir), "../outside", false, &fresh, 0).is_err());
+        assert!(
+            diff(path(&dir), "space [a].txt", true, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn unsupported_hunks_and_non_utf8_diff_are_rejected() {
+        let (dir, _) = separated_changes();
+        write(&dir, "new.txt", "new\n");
+        let new = diff(path(&dir), "new.txt", false, None).unwrap();
+        assert_eq!(
+            apply_hunk(path(&dir), "new.txt", false, &new, 0).unwrap_err(),
+            "hunkUnavailable"
+        );
+        std::fs::write(dir.path().join("space [a].txt"), b"bad \xff\n").unwrap();
+        assert_eq!(
+            diff(path(&dir), "space [a].txt", false, None).unwrap_err(),
+            "nonUtf8Diff"
+        );
+    }
+
+    #[test]
+    fn operation_states_and_upstream_are_reported_and_guarded() {
+        let (dir, _) = separated_changes();
+        let repo = repository(path(&dir), 100).unwrap();
+        assert!(repo.upstream.is_none());
+        assert!(repo.operation.is_none());
+        assert!(!repo.head_detached);
+        let head = run(dir.path(), &["rev-parse", "HEAD"], None).unwrap();
+        for (marker, expected) in [
+            ("MERGE_HEAD", "merge"),
+            ("CHERRY_PICK_HEAD", "cherryPick"),
+            ("REVERT_HEAD", "revert"),
+        ] {
+            let marker_path = dir.path().join(".git").join(marker);
+            std::fs::write(&marker_path, &head).unwrap();
+            assert_eq!(
+                repository(path(&dir), 100).unwrap().operation.as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                operate(
+                    path(&dir),
+                    Action::Switch {
+                        branch: "main".into()
+                    }
+                )
+                .unwrap_err(),
+                "finishOperation"
+            );
+            assert_eq!(
+                operate(path(&dir), Action::Pull).unwrap_err(),
+                "finishOperation"
+            );
+            if expected != "merge" {
+                assert_eq!(
+                    operate(
+                        path(&dir),
+                        Action::Commit {
+                            message: "blocked".into()
+                        }
+                    )
+                    .unwrap_err(),
+                    "finishOperation"
+                );
+            }
+            std::fs::remove_file(marker_path).unwrap();
+        }
+        std::fs::create_dir(dir.path().join(".git/rebase-merge")).unwrap();
+        assert_eq!(operation(dir.path()).unwrap().as_deref(), Some("rebase"));
+        std::fs::remove_dir(dir.path().join(".git/rebase-merge")).unwrap();
+        assert_eq!(
+            operate(path(&dir), Action::Pull).unwrap_err(),
+            "missingUpstream"
+        );
+    }
+    #[test]
+    fn hunk_action_deserializes_frontend_payload_and_runs_real_git() {
+        let (dir, _) = separated_changes();
+        let patch = diff(path(&dir), "space [a].txt", false, None).unwrap();
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "kind": "applyHunk", "file": "space [a].txt", "staged": false,
+            "expectedDiff": patch, "hunk": 0
+        }))
+        .unwrap();
+        operate(path(&dir), action).unwrap();
+        let staged = diff(path(&dir), "space [a].txt", true, None).unwrap();
+        assert!(staged.contains("+first change"));
+        assert!(!staged.contains("+second change"));
+    }
+
+    #[test]
+    fn hunk_handles_missing_final_newline_and_external_index_changes() {
+        let dir = setup();
+        write(&dir, "a.txt", "before");
+        stage(&dir, &["a.txt"]);
+        commit(&dir, "base");
+        write(&dir, "a.txt", "after");
+        let patch = diff(path(&dir), "a.txt", false, None).unwrap();
+        assert!(patch.contains("No newline at end of file"));
+        apply_hunk(path(&dir), "a.txt", false, &patch, 0).unwrap();
+        let cached = diff(path(&dir), "a.txt", true, None).unwrap();
+        write(&dir, "a.txt", "external change");
+        stage(&dir, &["a.txt"]);
+        assert_eq!(
+            apply_hunk(path(&dir), "a.txt", true, &cached, 0).unwrap_err(),
+            "staleHunk"
+        );
+        let fresh = diff(path(&dir), "a.txt", true, None).unwrap();
+        apply_hunk(path(&dir), "a.txt", true, &fresh, 0).unwrap();
+        assert!(diff(path(&dir), "a.txt", true, None).unwrap().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "external change"
+        );
+    }
+
+    #[test]
+    fn operation_detection_supports_linked_worktrees_and_sequence_states() {
+        let (dir, _) = separated_changes();
+        let linked_parent = tempfile::tempdir().unwrap();
+        let linked = linked_parent.path().join("linked");
+        run(
+            dir.path(),
+            &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+            None,
+        )
+        .unwrap();
+        let metadata = run(&linked, &["rev-parse", "--absolute-git-dir"], None).unwrap();
+        let metadata = Path::new(metadata.trim());
+        std::fs::create_dir(metadata.join("rebase-apply")).unwrap();
+        std::fs::write(metadata.join("rebase-apply/applying"), "").unwrap();
+        assert_eq!(operation(&linked).unwrap().as_deref(), Some("am"));
+        assert!(operation(dir.path()).unwrap().is_none());
+        std::fs::remove_dir_all(metadata.join("rebase-apply")).unwrap();
+        std::fs::create_dir(metadata.join("sequencer")).unwrap();
+        for (line, expected) in [
+            ("pick abcdef commit", "cherryPick"),
+            ("revert abcdef commit", "revert"),
+        ] {
+            std::fs::write(metadata.join("sequencer/todo"), line).unwrap();
+            assert_eq!(operation(&linked).unwrap().as_deref(), Some(expected));
+        }
     }
 }

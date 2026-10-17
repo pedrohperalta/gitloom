@@ -174,4 +174,46 @@ export const ptBR: Record<MessageKey, string> = {
   push: "Push",
   commitRef: "Commit {hash}",
   gitDiagnostics: "Os diagnósticos do Git são exibidos no idioma original.",
+  draftWarning:
+    "O rascunho está nesta janela, mas não pôde ser salvo no dispositivo. Mantenha a janela aberta ou copie a mensagem antes de sair.",
+  stageHunk: "Preparar hunk",
+  unstageHunk: "Retirar hunk do stage",
+  staleHunk:
+    "O arquivo mudou desde esta prévia. Revise o diff atualizado e tente novamente.",
+  hunkUnavailable:
+    "Hunks estão disponíveis para arquivos de texto rastreados e modificados, sem renomeação ou mudança de modo. Use a ação por arquivo para esta alteração.",
+  finishOperation:
+    "Conclua ou aborte a operação Git atual pelo terminal e atualize o repositório.",
+  missingUpstream:
+    "Esta branch não tem upstream. O primeiro push configura origin ou o único remoto. Para outro destino, configure o tracking pelo Git. Pull exige upstream.",
+  authGuidance:
+    "Verifique o SSH agent ou credential helper deste remoto pelo terminal e tente novamente. O Gitloom usa sua autenticação Git existente.",
+  divergenceGuidance:
+    "O histórico local e remoto divergiu ou o push exige atualização. Faça fetch, revise o histórico e reconcilie com merge ou rebase pelo terminal antes de tentar novamente. Pull aceita apenas fast-forward.",
+  dirtyGuidance:
+    "Alterações locais seriam sobrescritas. Faça commit ou stash pelo terminal antes de trocar de branch ou fazer pull.",
+  conflictGuidance:
+    "Resolva os arquivos em conflito no editor, revise o resultado e prepare os arquivos resolvidos. Se houver uma operação em andamento, siga a orientação indicada aqui.",
+  mergeGuidance:
+    "Merge em andamento. Resolva e prepare os conflitos e faça commit aqui para concluir; para abortar, use git merge --abort no terminal.",
+  rebaseGuidance:
+    "Rebase em andamento. Resolva e prepare os conflitos e execute git rebase --continue no terminal; para abortar, use git rebase --abort. Atualize depois.",
+  cherryPickGuidance:
+    "Cherry-pick em andamento. Resolva e prepare os conflitos e execute git cherry-pick --continue no terminal; para abortar, use git cherry-pick --abort. Atualize depois.",
+  revertGuidance:
+    "Revert em andamento. Resolva e prepare os conflitos e execute git revert --continue no terminal; para abortar, use git revert --abort. Atualize depois.",
+  detachedGuidance:
+    "HEAD destacado: crie uma branch antes de fazer commit para manter os novos commits acessíveis.",
+  identityGuidance:
+    "Configure user.name e user.email neste repositório pelo Git e tente o commit novamente. Seu rascunho foi preservado.",
+  signingGuidance:
+    "Verifique a chave e o agente de assinatura do Git pelo terminal e tente novamente. Seu rascunho foi preservado.",
+  lockGuidance:
+    "Outra operação Git pode estar em execução. Aguarde e atualize. Se o lock persistir, inspecione pelo terminal antes de removê-lo.",
+  connectionGuidance:
+    "Verifique a conexão e o acesso ao remoto pelo terminal. Atualize para conferir o resultado antes de repetir uma operação que possa ter sido concluída.",
+  nonUtf8Diff:
+    "Este diff contém texto fora de UTF-8. Revise no editor e use stage por arquivo.",
+  amGuidance:
+    "Aplicação de patch em andamento. Resolva e prepare os conflitos e execute git am --continue no terminal; para abortar, use git am --abort. Atualize depois.",
 };

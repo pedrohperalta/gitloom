@@ -15,9 +15,9 @@ export function localizeBackendMessage(
   value: string,
   language: Language,
 ): string {
-  if (language === "pt-BR") return value;
   if (Object.prototype.hasOwnProperty.call(en, value))
-    return en[value as MessageKey];
+    return createTranslator(language)(value as MessageKey);
+  if (language === "pt-BR") return value;
   for (const prefix of [
     "Não foi possível executar Git:",
     "Pasta indisponível:",

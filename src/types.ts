@@ -30,8 +30,18 @@ export type Repository = {
   ahead: number;
   behind: number;
   hasMore: boolean;
+  upstream: string | null;
+  operation: "merge" | "rebase" | "cherryPick" | "revert" | "am" | null;
+  headDetached: boolean;
 };
 export type Action =
+  | {
+      kind: "applyHunk";
+      file: string;
+      staged: boolean;
+      expectedDiff: string;
+      hunk: number;
+    }
   | { kind: "stage" | "unstage"; files: string[] }
   | { kind: "commit"; message: string }
   | { kind: "switch" | "createBranch"; branch: string }
