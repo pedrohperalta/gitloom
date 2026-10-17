@@ -1,0 +1,170 @@
+# Gitloom
+
+Um cliente Git desktop para macOS, feito para acompanhar o histórico, revisar diffs e preparar commits em uma interface focada.
+
+**V1 · versão 0.1.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
+
+![Workspace do Gitloom com diff e preparação de arquivos](docs/images/workspace.png)
+
+_Prévia com um repositório fictício._
+
+## Recursos
+
+- Histórico de todas as branches, grafo de parentesco e busca por mensagem, autor, hash ou referência.
+- Diff unificado no painel esquerdo ao selecionar um arquivo; voltar ao histórico preserva a busca e a posição da lista.
+- Working tree e stage com rolagem independente, stage/unstage por arquivo ou em lote e seleção automática do arquivo movido.
+- Commits com mensagem, preservação do rascunho em caso de erro e detalhes dos commits anteriores.
+- Criação e troca de branches locais; fetch, pull com fast-forward e push.
+- Oito repositórios recentes, atualização ao retornar à janela e sidebar redimensionável com largura salva.
+- Seis temas, interface em inglês ou português do Brasil e tamanho do texto configurável.
+
+## Requisitos
+
+| Ferramenta          | Requisito                           |
+| ------------------- | ----------------------------------- |
+| Sistema             | macOS; plataforma validada nesta V1 |
+| Node.js             | 22.12+ ou 24+ e npm                 |
+| Git                 | Instalado e disponível no `PATH`    |
+| Rust                | Canal stable atualizado, com Cargo  |
+| Apple               | Xcode Command Line Tools            |
+| Testes de interface | Google Chrome instalado             |
+
+A autenticação dos remotos usa sua configuração existente do Git, incluindo SSH agent e credential helpers. Configure o acesso aos seus repositórios pelo Git antes de sincronizar no aplicativo.
+
+## Começar
+
+O repositório é privado: o clone exige acesso à conta ou uma chave SSH autorizada.
+
+```sh
+git clone git@github.com:pedrohperalta/gitloom.git
+cd gitloom
+npm ci
+npm run tauri -- dev
+```
+
+Na primeira execução, o Cargo baixa e compila as dependências Rust. Abra um repositório Git existente pelo botão **Open repository** ou por **⌘ O**.
+
+Para desenvolver somente a interface no navegador:
+
+```sh
+npm run dev
+```
+
+O navegador não executa operações Git reais; o acesso aos arquivos e comandos Git funciona no aplicativo Tauri. Os testes de interface simulam a comunicação com o backend.
+
+### Gerar o aplicativo
+
+```sh
+npm run tauri -- build --bundles app
+```
+
+O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. Esta configuração gera um build local; assinatura e notarização para distribuição não fazem parte da V1.
+
+O script `scripts/tauri.mjs` usa o Rust do `PATH`. Se existir uma instalação isolada em `.toolchain/`, ele a detecta e configura somente o processo filho. Essa pasta é local e não faz parte do repositório.
+
+## Uso
+
+1. Abra um repositório local e consulte o histórico ou as alterações atuais.
+2. Selecione um arquivo para revisar o diff no painel esquerdo.
+3. Use **+** para preparar o arquivo ou **−** para retirá-lo do stage.
+4. Escreva uma mensagem e faça o commit dos arquivos preparados.
+5. Sincronize com **Fetch**, **Pull** ou **Push**, quando necessário.
+
+O primeiro push usa `origin`, ou o único remoto disponível, e configura o upstream. Se houver ambiguidade entre remotos, configure o destino pelo Git.
+
+### Atalhos
+
+| Atalho    | Ação                                             |
+| --------- | ------------------------------------------------ |
+| ⌘ O       | Abrir repositório                                |
+| ⌘ R       | Atualizar repositório                            |
+| ⌘ Enter   | Fazer commit, com mensagem e arquivos preparados |
+| ⌘ ,       | Abrir configurações                              |
+| ⌘ + / ⌘ − | Aumentar ou diminuir o texto da interface        |
+| ⌘ 0       | Restaurar o texto para 100%                      |
+
+### Aparência e idioma
+
+Abra **Settings / Configurações** na sidebar. As alterações são aplicadas imediatamente e salvas localmente.
+
+- **Temas:** Dark (padrão), Light, Darcula, Nord, Sage e Follow system. O tema do sistema acompanha mudanças de claro/escuro.
+- **Idiomas:** English (padrão) e Português (Brasil). Conteúdo dos arquivos, mensagens de commits e saídas originais do Git mantêm seu idioma.
+- **Texto:** 100%, 110%, 125%, 140% ou 150%, também ajustável pela barra inferior. A altura das linhas acompanha a escala.
+- **Diff:** fonte independente, de 10 a 24 px.
+- **Sidebar:** arraste a borda direita para ajustar a largura. Clique duplo restaura a largura automática. Com a divisória em foco, use as setas; Shift acelera o ajuste, Home/End selecionam os limites e Enter restaura o padrão.
+
+## Arquitetura
+
+```text
+src/
+  App.tsx              Workspace, seleção, navegação e operações
+  graph.ts             Layout do grafo e interpretação do diff
+  types.ts             Contratos entre frontend e backend
+  preferences.ts       Persistência de preferências e tema nativo
+  locales/             Catálogos de inglês e português do Brasil
+  themes.css           Tokens semânticos dos temas
+src-tauri/
+  src/git.rs           Execução de Git, parsing e testes com Git real
+  src/lib.rs           Comandos Tauri assíncronos e serialização de operações
+  capabilities/        Permissões concedidas à janela
+scripts/tauri.mjs       Inicialização da CLI Tauri
+e2e/                  Testes de interface com backend simulado
+```
+
+O frontend chama quatro comandos Tauri: `repository`, `changes`, `diff` e `operate`. O backend executa o Git diretamente, sem interpolação de shell, usa pathspecs literais para arquivos e serializa as operações. Hooks e assinatura de commits seguem a configuração do Git.
+
+Repositórios recentes e preferências ficam no armazenamento local do aplicativo. O identificador interno `dev.local.ramo` e a chave `ramo.recents` foram mantidos para preservar os dados das versões iniciais; o nome do produto, do pacote e do executável é Gitloom.
+
+## Verificação
+
+```sh
+npm run build
+npm test
+npm run test:e2e
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+```
+
+| Verificação | Cobertura                                                   |
+| ----------- | ----------------------------------------------------------- |
+| Build       | TypeScript e bundle de produção do frontend                 |
+| Vitest      | Grafo, diff, traduções e validação das preferências         |
+| Playwright  | Workspace, commits, stage, temas, idiomas, escala e sidebar |
+| Cargo       | Operações Git reais em repositórios temporários             |
+
+O Playwright inicia o Vite automaticamente e usa o Chrome instalado, sem caminhos específicos de uma máquina. Seus testes não substituem os testes do backend com Git real.
+
+Se estiver usando a instalação Rust isolada:
+
+```sh
+RUSTUP_HOME="$PWD/.toolchain/rustup" \
+CARGO_HOME="$PWD/.toolchain/cargo" \
+.toolchain/cargo/bin/cargo test --locked --manifest-path src-tauri/Cargo.toml
+```
+
+Formatação:
+
+```sh
+npm run format
+```
+
+## Limitações da V1
+
+- Stage por arquivo; seleção de linhas ou hunks ainda não está disponível.
+- Sem descarte de alterações, reset destrutivo, force push ou editor de conflitos. Resolva conflitos externamente e prepare os arquivos antes do commit.
+- Pull usa `--ff-only`; históricos divergentes precisam ser reconciliados pelo Git.
+- Sem login OAuth ou terminal interativo para senha. A autenticação depende da configuração existente do Git.
+- Histórico inicial de 400 commits, com paginação até 5.000. A busca considera apenas os commits carregados.
+- Diffs de merges comparam o commit com o primeiro pai.
+- Arquivos novos maiores que 1 MB, binários e links simbólicos têm prévia limitada. Saídas de comandos têm limite de 12 MB e tempo de execução de 120 segundos.
+- Repositórios bare e nomes de arquivo que não sejam UTF-8 não são suportados.
+- Linux e Windows ainda não foram validados.
+
+## Desenvolvimento
+
+Use mensagens de commit no formato `tipo: descrição`, por exemplo `fix: preserve file selection after staging`. Separe mudanças por responsabilidade e execute as verificações relevantes antes de enviar.
+
+Para adicionar textos, atualize os dois catálogos em `src/locales/`. Para ajustar cores, use os tokens em `src/themes.css`. Operações Git devem ficar no backend, com argumentos explícitos e testes em repositórios temporários.
+
+Ao reportar um problema, inclua a versão, o macOS, os passos para reproduzir e o resultado esperado. Use dados fictícios em screenshots e não inclua tokens, credenciais ou conteúdo privado de repositórios.
+
+O Gitloom é uma implementação própria. Não depende do REA e não incorpora código extraído do GitKraken.
