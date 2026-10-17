@@ -1,0 +1,598 @@
+import { test, expect } from "@playwright/test";
+
+test.beforeEach(async ({ page }, testInfo) => {
+  const savedPreferences = testInfo.title.startsWith("preferences:")
+    ? null
+    : { theme: "sage", language: "pt-BR" };
+  await page.addInitScript((initialPreferences) => {
+    if (initialPreferences)
+      localStorage.setItem(
+        "gitloom.preferences",
+        JSON.stringify(initialPreferences),
+      );
+    const hash = (n: number) => n.toString(16).padStart(40, "0");
+    const repo = {
+      path: "/tmp/gitloom-playground",
+      name: "gitloom-playground",
+      branch: "main",
+      branches: [
+        { name: "main", current: true, upstream: "origin/main", remote: false },
+        {
+          name: "feature/diff-view",
+          current: false,
+          upstream: "",
+          remote: false,
+        },
+      ],
+      commits: [
+        {
+          hash: hash(6),
+          parents: [hash(5), hash(4)],
+          author: "Pedro",
+          date: "2026-10-16T15:00:00Z",
+          subject: "Merge feature/diff-view into main",
+          refs: "HEAD -> main, origin/main",
+        },
+        {
+          hash: hash(5),
+          parents: [hash(3)],
+          author: "Pedro",
+          date: "2026-10-16T14:00:00Z",
+          subject: "Ajusta estados vazios da interface",
+          refs: "",
+        },
+        {
+          hash: hash(4),
+          parents: [hash(3)],
+          author: "Pedro",
+          date: "2026-10-16T13:00:00Z",
+          subject: "Adiciona visualização de diff",
+          refs: "feature/diff-view",
+        },
+        {
+          hash: hash(3),
+          parents: [hash(2)],
+          author: "Pedro",
+          date: "2026-10-15T12:00:00Z",
+          subject: "Conecta o histórico ao Git local",
+          refs: "",
+        },
+        {
+          hash: hash(2),
+          parents: [hash(1)],
+          author: "Pedro",
+          date: "2026-10-15T11:00:00Z",
+          subject: "Cria navegação de branches",
+          refs: "",
+        },
+        {
+          hash: hash(1),
+          parents: [],
+          author: "Pedro",
+          date: "2026-10-15T10:00:00Z",
+          subject: "Primeiro commit",
+          refs: "",
+        },
+      ],
+      files: [
+        {
+          path: "src/App.tsx",
+          originalPath: null,
+          index: " ",
+          worktree: "M",
+          conflict: false,
+        },
+        {
+          path: "src/components/DiffView.tsx",
+          originalPath: null,
+          index: "?",
+          worktree: "?",
+          conflict: false,
+        },
+      ],
+      remotes: ["origin"],
+      ahead: 0,
+      behind: 0,
+      hasMore: false,
+    };
+    if (new URLSearchParams(location.search).has("many-files")) {
+      repo.files.push(
+        ...Array.from({ length: 100 }, (_, i) => ({
+          path: `src/z-file-${String(i).padStart(3, "0")}.ts`,
+          originalPath: null,
+          index: i < 40 ? "M" : " ",
+          worktree: i < 40 ? " " : "M",
+          conflict: false,
+        })),
+      );
+    }
+    localStorage.setItem(
+      "ramo.recents",
+      JSON.stringify([{ path: repo.path, name: repo.name }]),
+    );
+    (window as any).__TAURI_INTERNALS__ = {
+      invoke: async (cmd: string, args: any) => {
+        if (cmd === "repository") return structuredClone(repo);
+        if (cmd === "changes")
+          return [
+            {
+              path: "src/App.tsx",
+              originalPath: null,
+              index: "M",
+              worktree: " ",
+              conflict: false,
+            },
+          ];
+        if (cmd === "diff")
+          return 'diff --git a/src/App.tsx b/src/App.tsx\n--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,5 @@\n import React from "react";\n-export default function App() {\n+export default function App() {\n+  const title = "Seu Git, com clareza";\n   return <main>Gitloom</main>;\n }';
+        if (cmd === "operate") {
+          const a = args.action;
+          if (a.kind === "stage")
+            repo.files.forEach((f) => {
+              if (a.files.includes(f.path)) {
+                f.index = f.worktree === "?" ? "A" : f.worktree;
+                f.worktree = " ";
+              }
+            });
+          if (a.kind === "unstage")
+            repo.files.forEach((f) => {
+              if (a.files.includes(f.path)) {
+                f.worktree = f.index === "A" ? "?" : f.index;
+                f.index = f.index === "A" ? "?" : " ";
+              }
+            });
+          if (a.kind === "commit") {
+            if (a.message.includes("fail"))
+              throw "Hook de commit recusou a mensagem";
+            repo.files = repo.files.filter(
+              (f) => f.index === " " || f.index === "?",
+            );
+          }
+          if (a.kind === "createBranch" || a.kind === "switch") {
+            repo.branch = a.branch;
+            repo.branches.forEach((b) => {
+              b.current = b.name === a.branch;
+            });
+            if (a.kind === "createBranch")
+              repo.branches.push({
+                name: a.branch,
+                current: true,
+                upstream: "",
+                remote: false,
+              });
+          }
+          return "";
+        }
+        throw `Comando inesperado: ${cmd}`;
+      },
+    };
+  }, savedPreferences);
+});
+test("open, inspect, stage, recover failed commit, commit, and create branch", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Espaço para o que importa." }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/welcome.png" });
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: /gitloom-playground/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await expect(page.getByLabel("Diff do arquivo")).toContainText(
+    "Seu Git, com clareza",
+  );
+  const diffPanel = page.getByRole("region", {
+    name: "Visualização do diff",
+    exact: true,
+  });
+  await expect(diffPanel).toBeVisible();
+  await expect(page.getByLabel("Buscar commits")).toBeHidden();
+  await expect(
+    page
+      .getByRole("region", { name: "Arquivos e commit" })
+      .getByLabel("Diff do arquivo"),
+  ).toHaveCount(0);
+  const diffBounds = await diffPanel.boundingBox();
+  const filesBounds = await page
+    .getByRole("region", { name: "Arquivos e commit" })
+    .boundingBox();
+  expect(diffBounds!.x + diffBounds!.width).toBeLessThan(filesBounds!.x);
+  await page.getByLabel("Seu próximo commit").fill("Rascunho preservado");
+  await page.getByRole("button", { name: "Voltar ao histórico" }).click();
+  await expect(page.getByLabel("Buscar commits")).toBeVisible();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "Rascunho preservado",
+  );
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await page.screenshot({ path: "test-results/workspace.png" });
+  await page
+    .getByRole("button", {
+      name: "Adicionar ao stage src/App.tsx",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Retirar do stage src/App.tsx",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Seu próximo commit").fill("fail");
+  await page.getByRole("button", { name: "Fazer commit", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Hook de commit recusou");
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue("fail");
+  await page.getByLabel("Seu próximo commit").fill("Melhora a interface");
+  await page.getByRole("button", { name: "Fazer commit", exact: true }).click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "Fazer commit", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Nova branch", exact: true }).click();
+  await page.getByLabel("Nome da branch").fill("feature/new");
+  await page.getByRole("button", { name: "Criar e trocar de branch" }).click();
+  await expect(page.locator(".branch-pill")).toHaveText("feature/new");
+});
+test("search and inspect historical changes separately from working tree", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page.getByLabel("Buscar commits").fill("visualização");
+  await expect(page.locator(".commit-row")).toHaveCount(1);
+  await expect(page.locator(".graph")).toHaveCount(0);
+  await page.locator(".commit-row").click();
+  await expect(
+    page.getByText("Detalhes do commit", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Diff do arquivo")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Fazer commit", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Voltar ao local" }).click();
+  await expect(
+    page.getByRole("button", { name: "Fazer commit", exact: true }),
+  ).toBeVisible();
+});
+
+for (const height of [900, 680]) {
+  test(`both file groups stay visible and reveal moved files at ${height}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1200, height });
+    await page.goto("/?many-files");
+    await page
+      .getByRole("button", { name: "gitloom-playground", exact: true })
+      .click();
+    const unstaged = page.getByRole("region", {
+      name: "Para preparar",
+      exact: true,
+    });
+    const staged = page.getByRole("region", { name: "No stage", exact: true });
+    await expect(unstaged.locator(".file-group-heading")).toBeInViewport();
+    await expect(staged.locator(".file-group-heading")).toBeInViewport();
+    const filesBounds = await page.locator(".files-area").boundingBox();
+    const panelBounds = await page
+      .getByRole("region", { name: "Arquivos e commit" })
+      .boundingBox();
+    expect(filesBounds!.height).toBeGreaterThan(panelBounds!.height / 2);
+    expect((await unstaged.boundingBox())!.height).toBeGreaterThanOrEqual(100);
+    expect((await staged.boundingBox())!.height).toBeGreaterThanOrEqual(100);
+    await page
+      .getByRole("button", {
+        name: "Adicionar ao stage src/z-file-099.ts",
+        exact: true,
+      })
+      .click();
+    const moved = staged.getByRole("button", {
+      name: "M src/z-file-099.ts",
+      exact: true,
+    });
+    await expect(moved).toBeInViewport();
+    await expect(staged.locator(".file-row.selected")).toContainText(
+      "src/z-file-099.ts",
+    );
+    await expect(unstaged.locator(".file-group-heading")).toBeInViewport();
+    await expect(staged.locator(".file-group-heading")).toBeInViewport();
+    await page.screenshot({ path: `test-results/many-files-${height}.png` });
+    await staged
+      .getByRole("button", {
+        name: "Retirar do stage src/z-file-099.ts",
+        exact: true,
+      })
+      .click();
+    await expect(
+      unstaged.getByRole("button", {
+        name: "M src/z-file-099.ts",
+        exact: true,
+      }),
+    ).toBeInViewport();
+    await expect(staged.locator(".file-group-heading")).toBeInViewport();
+    await expect(
+      page.getByRole("button", { name: "Fazer commit", exact: true }),
+    ).toBeInViewport();
+  });
+}
+
+test("preferences: English default, live themes, persistent language, and intact workspace", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Room for what matters." }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page).toHaveTitle("Gitloom — Local Git");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await page.getByLabel("Your next commit").fill("Preserve this draft");
+  for (const theme of ["Dark", "Light", "Darcula", "Nord", "Sage"]) {
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("radio", { name: theme, exact: true }).check();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      theme.toLowerCase(),
+    );
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(
+      page.getByRole("region", { name: "Diff viewer" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Your next commit")).toHaveValue(
+      "Preserve this draft",
+    );
+    await page.screenshot({
+      path: `test-results/theme-${theme.toLowerCase()}.png`,
+    });
+  }
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("radio", { name: "Darcula", exact: true }).check();
+  await page.getByLabel("Language", { exact: true }).selectOption("pt-BR");
+  await expect(
+    page.getByRole("dialog", { name: "Configurações", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".settings-footer .primary")).toHaveCSS(
+    "background-color",
+    "rgb(204, 120, 50)",
+  );
+  await page.screenshot({
+    path: "test-results/settings-pt-br.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Concluir", exact: true }).click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "Preserve this draft",
+  );
+  await expect(
+    page.getByRole("region", { name: "Visualização do diff" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Voltar ao histórico" }).click();
+  await expect(page.getByLabel("Buscar commits")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "darcula");
+  await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+  await expect(
+    page.getByRole("button", { name: "Configurações", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page.getByLabel("Idioma", { exact: true }).selectOption("en");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Stage src/App.tsx", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "Staged", exact: true })
+      .getByRole("button", { name: "M src/App.tsx", exact: true }),
+  ).toBeInViewport();
+  await expect(page.getByText("1 file staged.", { exact: true })).toBeVisible();
+});
+
+test("preferences: system theme follows OS appearance changes", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("radio", { name: "Follow system", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+test("preferences: text sizing is immediate, independent, persistent and keyboard accessible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1080, height: 680 });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  const draft = page.getByRole("textbox", { name: "Your next commit" });
+  await draft.fill("Keep this draft while resizing");
+  const scale = page.locator(".statusbar select");
+  await scale.selectOption("150");
+  await expect(page.locator("html")).toHaveCSS("font-size", "19.5px");
+  await expect(page.locator(".diff-code")).toHaveCSS("font-size", "12px");
+  await expect(
+    page.getByRole("button", { name: "Increase text size", exact: true }),
+  ).toBeDisabled();
+  await expect(draft).toHaveValue("Keep this draft while resizing");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Diff font size", { exact: true }).selectOption("24");
+  await expect(page.locator(".diff-code")).toHaveCSS("font-size", "24px");
+  await expect(page.locator(".diff-line").first()).toHaveCSS(
+    "min-height",
+    "48px",
+  );
+  await page.screenshot({
+    path: "test-results/font-settings-150.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(draft).toHaveValue("Keep this draft while resizing");
+  await page.screenshot({
+    path: "test-results/font-workspace-150.png",
+    animations: "disabled",
+  });
+  await page
+    .getByRole("button", { name: "Back to history", exact: true })
+    .click();
+  await page.screenshot({
+    path: "test-results/font-history-150.png",
+    animations: "disabled",
+  });
+  const subject = page.locator(".commit-subject").first();
+  await expect(subject).toHaveCSS("font-size", "18px");
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await page.keyboard.press("Control+-");
+  await expect(scale).toHaveValue("140");
+  await page.keyboard.press("Control+=");
+  await expect(scale).toHaveValue("150");
+  await page.keyboard.press("Control+0");
+  await expect(scale).toHaveValue("100");
+  await expect(page.locator(".diff-code")).toHaveCSS("font-size", "24px");
+  await scale.selectOption("125");
+  await page.reload();
+  await expect(scale).toHaveValue("125");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Diff font size", { exact: true })).toHaveValue(
+    "24",
+  );
+  await expect(
+    page.getByLabel("Interface text size", { exact: true }).last(),
+  ).toHaveValue("125");
+});
+
+test("preferences: spacing scales with text and sidebar resizing persists within window limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page.locator(".statusbar select").selectOption("150");
+  const sidebar = page.locator(".sidebar");
+  const divider = page.getByRole("separator");
+  await expect(sidebar).toHaveCSS("width", "342px");
+  await expect(page.locator(".commit-row").first()).toHaveCSS("height", "72px");
+  await expect(page.locator(".graph").first()).toHaveAttribute("height", "72");
+  await expect(page.locator(".file-row").first()).toHaveCSS("height", "48px");
+  const graphRows = await page.locator(".graph").evaluateAll((nodes) =>
+    nodes.slice(0, 2).map((node) => {
+      const r = node.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    }),
+  );
+  expect(graphRows[0].bottom).toBeCloseTo(graphRows[1].top, 1);
+  // Drag the actual splitter, then verify that keyboard adjustment and reload retain it.
+  const handle = (await divider.boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 78, handle.y + 200, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect(sidebar).toHaveCSS("width", "420px");
+  await divider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(sidebar).toHaveCSS("width", "410px");
+  await page.reload();
+  await expect(sidebar).toHaveCSS("width", "410px");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page.setViewportSize({ width: 1080, height: 680 });
+  await expect(sidebar).toHaveCSS("width", "340px");
+  for (const language of ["en", "pt-BR"]) {
+    await page
+      .getByRole("button", {
+        name: "Settings",
+        exact: true,
+      })
+      .click();
+    await page.locator("#preferences-language").selectOption(language);
+    await page
+      .getByRole("button", {
+        name: language === "en" ? "Done" : "Concluir",
+        exact: true,
+      })
+      .click();
+    const geometry = await page.locator(".open-repo").evaluate((button) => {
+      const label = button.querySelector("span")!;
+      const shortcut = button.querySelector("kbd")!;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      return {
+        lines: range.getClientRects().length,
+        fits: button.scrollWidth <= button.clientWidth,
+        labelRight: label.getBoundingClientRect().right,
+        shortcutLeft: shortcut.getBoundingClientRect().left,
+      };
+    });
+    expect(geometry.lines).toBe(1);
+    expect(geometry.fits).toBe(true);
+    expect(geometry.labelRight).toBeLessThanOrEqual(geometry.shortcutLeft);
+    await page.screenshot({
+      path: `test-results/spacing-150-${language}.png`,
+      animations: "disabled",
+    });
+  }
+  await page
+    .getByRole("button", {
+      name: "Adicionar ao stage src/App.tsx",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "No stage", exact: true })
+      .getByRole("button", { name: "M src/App.tsx", exact: true }),
+  ).toBeInViewport();
+  await page.setViewportSize({ width: 1280, height: 680 });
+  await expect(divider).toHaveAttribute("aria-valuemax", "440");
+  await divider.focus();
+  await page.keyboard.press("End");
+  await expect(sidebar).toHaveCSS("width", "440px");
+  expect(
+    await page
+      .locator(".workspace")
+      .evaluate((workspace) => workspace.scrollWidth <= workspace.clientWidth),
+  ).toBe(true);
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(sidebar).toHaveCSS("width", "410px");
+  await divider.dblclick();
+  await expect(sidebar).toHaveCSS("width", "342px");
+});
