@@ -55,6 +55,8 @@ describe("preferences", () => {
         textScale: 100,
         diffFontSize: 12,
         sidebarWidth: null,
+        sidebarCollapsed: false,
+        historyPercent: 58.33,
       });
     }
   });
@@ -83,6 +85,8 @@ describe("preferences", () => {
       textScale: 100,
       diffFontSize: 12,
       sidebarWidth: null,
+      sidebarCollapsed: false,
+      historyPercent: 58.33,
     });
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     expect(resolveTheme("system")).toBe("dark");

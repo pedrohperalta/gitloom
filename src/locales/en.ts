@@ -142,6 +142,12 @@ export const en = {
   movedToStageOther: "{count} files staged.",
   movedToUnstagedOne: "{count} file unstaged.",
   movedToUnstagedOther: "{count} files unstaged.",
+  collapseSidebar: "Collapse sidebar",
+  expandSidebar: "Expand sidebar",
+  resizeWorkspace: "Resize History and Changes",
+  resizeWorkspaceHint:
+    "Drag to resize · Arrow keys to adjust · Double-click to reset",
+  workspaceProportions: "History {history}%, Changes {changes}%",
   resizeSidebar: "Resize sidebar",
   resizeSidebarHint:
     "Drag to resize · Double-click to reset · Arrow keys to adjust",

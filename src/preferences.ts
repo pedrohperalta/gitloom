@@ -19,6 +19,8 @@ export type Preferences = {
   textScale: number;
   diffFontSize: number;
   sidebarWidth: number | null;
+  sidebarCollapsed: boolean;
+  historyPercent: number;
 };
 const defaults: Preferences = {
   theme: "dark",
@@ -26,12 +28,22 @@ const defaults: Preferences = {
   textScale: 100,
   diffFontSize: 12,
   sidebarWidth: null,
+  sidebarCollapsed: false,
+  historyPercent: 58.33,
 };
 const storageKey = "gitloom.preferences";
 export function readPreferences(): Preferences {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
     return {
+      sidebarCollapsed: saved?.sidebarCollapsed === true,
+      historyPercent:
+        typeof saved?.historyPercent === "number" &&
+        Number.isFinite(saved.historyPercent) &&
+        saved.historyPercent >= 20 &&
+        saved.historyPercent <= 80
+          ? saved.historyPercent
+          : defaults.historyPercent,
       sidebarWidth:
         typeof saved?.sidebarWidth === "number" &&
         Number.isFinite(saved.sidebarWidth) &&

@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }, testInfo) => {
     ? null
     : { theme: "sage", language: "pt-BR" };
   await page.addInitScript((initialPreferences) => {
-    if (initialPreferences)
+    if (initialPreferences && !localStorage.getItem("gitloom.preferences"))
       localStorage.setItem(
         "gitloom.preferences",
         JSON.stringify(initialPreferences),
@@ -110,6 +110,9 @@ test.beforeEach(async ({ page }, testInfo) => {
       );
     }
     const params = new URLSearchParams(location.search);
+    if (params.has("long-branch"))
+      repo.branch =
+        "feature/very-long-branch-name-with-many-details-and-a-ticket-reference-GITLOOM-1234-improve-the-workspace-layout";
     if (params.has("git-state")) {
       repo.operation = params.get("git-state");
       repo.files[0].conflict = true;
@@ -553,7 +556,7 @@ test("preferences: spacing scales with text and sidebar resizing persists within
     .click();
   await page.locator(".statusbar select").selectOption("150");
   const sidebar = page.locator(".sidebar");
-  const divider = page.getByRole("separator");
+  const divider = page.locator(".sidebar-resizer:not(.workspace-resizer)");
   await expect(sidebar).toHaveCSS("width", "342px");
   await expect(page.locator(".commit-row").first()).toHaveCSS("height", "72px");
   await expect(page.locator(".graph").first()).toHaveAttribute("height", "72");
@@ -826,4 +829,142 @@ test("draft storage failure keeps the typed message and shows a warning", async 
     "important unsaved draft",
   );
   await expect(page.getByRole("status")).toContainText("rascunho");
+});
+
+test("collapsed navigation preserves shortcuts, drafts and the expanded width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1080, height: 680 });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page.getByLabel("Seu próximo commit").fill("Keep while collapsed");
+  const before = (await page.locator(".workspace").boundingBox())!.width;
+  await page
+    .getByRole("button", { name: "Recolher barra lateral", exact: true })
+    .click();
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "64px");
+  await expect(
+    page.getByRole("separator", {
+      name: "Redimensionar barra lateral",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  expect(
+    (await page.locator(".workspace").boundingBox())!.width,
+  ).toBeGreaterThan(before + 150);
+  await expect(
+    page.getByRole("button", { name: "Abrir repositório", exact: true }),
+  ).toBeInViewport();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "Keep while collapsed",
+  );
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Concluir", exact: true }).click();
+  await page.screenshot({ path: "test-results/sidebar-collapsed.png" });
+  await page.reload();
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "64px");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(page.getByLabel("Seu próximo commit")).toHaveValue(
+    "Keep while collapsed",
+  );
+  await page
+    .getByRole("button", { name: "Expandir barra lateral", exact: true })
+    .click();
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "228px");
+});
+
+test("workspace proportions support drag, keyboard, persistence, diff and narrow windows", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const open = () =>
+    page
+      .getByRole("button", { name: "gitloom-playground", exact: true })
+      .click();
+  await open();
+  const divider = page.getByRole("separator", {
+    name: "Redimensionar Histórico e Alterações",
+    exact: true,
+  });
+  const history = page.locator(".history-panel");
+  const initial = (await history.boundingBox())!.width;
+  const box = (await divider.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 100, box.y + 120, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  const resized = (await history.boundingBox())!.width;
+  expect(resized).toBeCloseTo(initial - 100, 0);
+  await divider.focus();
+  await page.keyboard.press("ArrowRight");
+  expect((await history.boundingBox())!.width).toBeCloseTo(resized + 10, 0);
+  await page.reload();
+  await open();
+  await expect(async () =>
+    expect((await history.boundingBox())!.width).toBeCloseTo(resized + 10, 0),
+  ).toPass();
+  await page
+    .getByRole("button", { name: "M src/App.tsx", exact: true })
+    .click();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+  await expect(divider).toBeVisible();
+  await page.setViewportSize({ width: 1080, height: 680 });
+  await divider.focus();
+  await page.keyboard.press("End");
+  expect(
+    (await page.locator(".changes-panel").boundingBox())!.width,
+  ).toBeGreaterThanOrEqual(299);
+  expect(
+    await page
+      .locator(".workspace")
+      .evaluate((el) => el.scrollWidth <= el.clientWidth),
+  ).toBe(true);
+  await page.screenshot({ path: "test-results/workspace-resized.png" });
+  await divider.dblclick();
+  const percent = await page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("gitloom.preferences")!).historyPercent,
+  );
+  expect(percent).toBe(58.33);
+});
+
+test("long branch names remain fully visible without pushing toolbar actions out of view", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1080, height: 680 });
+  await page.goto("/?long-branch");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  for (const scale of ["100", "150"]) {
+    await page.locator(".statusbar select").selectOption(scale);
+    const branch = page.locator(".branch-pill > span");
+    const fits = await branch.evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const container = el.parentElement!.getBoundingClientRect();
+      return Array.from(range.getClientRects()).every(
+        (r) =>
+          r.left >= container.left &&
+          r.right <= container.right + 1 &&
+          r.bottom <= container.bottom,
+      );
+    });
+    expect(fits).toBe(true);
+    await expect(page.getByRole("button", { name: /^Push/ })).toBeInViewport();
+    expect(
+      await page
+        .locator(".toolbar")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `test-results/long-branch-${scale}.png` });
+  }
 });

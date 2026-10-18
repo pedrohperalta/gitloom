@@ -20,6 +20,8 @@ import {
   LoaderCircle,
   Minus,
   Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   Settings,
@@ -39,6 +41,7 @@ import {
   type MessageParams,
 } from "./i18n";
 import { textScales, usePreferences } from "./preferences";
+import { WorkspaceSplit } from "./WorkspaceSplit";
 import { SidebarDivider } from "./SidebarDivider";
 import { SettingsDialog } from "./SettingsDialog";
 import { readDraft, saveDraft } from "./drafts";
@@ -569,17 +572,53 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar" style={{ width: sidebarWidth }}>
-        <div className="brand">
-          <div className="brand-mark">
-            <GitBranch size={24} strokeWidth={2.3} />
+      <aside
+        id="repository-sidebar"
+        className="sidebar"
+        data-collapsed={preferences.sidebarCollapsed}
+        style={{ width: preferences.sidebarCollapsed ? 64 : sidebarWidth }}
+      >
+        <div className="sidebar-header">
+          <div className="brand">
+            <div className="brand-mark">
+              <GitBranch size={24} strokeWidth={2.3} />
+            </div>
+            <span>
+              gitloom<span className="brand-dot">.</span>
+            </span>
           </div>
-          <span>
-            gitloom<span className="brand-dot">.</span>
-          </span>
+          <button
+            className="icon-button sidebar-toggle"
+            aria-label={t(
+              preferences.sidebarCollapsed
+                ? "expandSidebar"
+                : "collapseSidebar",
+            )}
+            title={t(
+              preferences.sidebarCollapsed
+                ? "expandSidebar"
+                : "collapseSidebar",
+            )}
+            aria-expanded={!preferences.sidebarCollapsed}
+            aria-controls="repository-sidebar"
+            onClick={() =>
+              setPreferences((p) => ({
+                ...p,
+                sidebarCollapsed: !p.sidebarCollapsed,
+              }))
+            }
+          >
+            {preferences.sidebarCollapsed ? (
+              <PanelLeftOpen size={18} />
+            ) : (
+              <PanelLeftClose size={18} />
+            )}
+          </button>
         </div>
         <button
           className="open-repo"
+          aria-label={t("Abrir repositório")}
+          title={t("Abrir repositório")}
           onClick={() => void choose()}
           disabled={!!busy}
         >
@@ -596,7 +635,8 @@ function App() {
           {recents.map((r) => (
             <button
               key={r.path}
-              title={r.path}
+              aria-label={r.name}
+              title={`${r.name} — ${r.path}`}
               className={`recent ${repo?.path === r.path ? "active" : ""}`}
               disabled={!!busy}
               onClick={() => void openRepository(r.path)}
@@ -673,7 +713,7 @@ function App() {
             title={t("settingsShortcut")}
           >
             <Settings size={16} />
-            {t("settings")}
+            <span>{t("settings")}</span>
             <kbd>⌘ ,</kbd>
           </button>
           <div className="sidebar-bottom">
@@ -682,30 +722,43 @@ function App() {
           </div>
         </div>
       </aside>
-      <SidebarDivider
-        width={sidebarWidth}
-        min={sidebarMin}
-        max={sidebarMax}
-        label={t("resizeSidebar")}
-        hint={t("resizeSidebarHint")}
-        onResize={(width) =>
-          setPreferences((p) => ({ ...p, sidebarWidth: width }))
-        }
-        onReset={() => setPreferences((p) => ({ ...p, sidebarWidth: null }))}
-      />
+      {!preferences.sidebarCollapsed && (
+        <SidebarDivider
+          width={sidebarWidth}
+          min={sidebarMin}
+          max={sidebarMax}
+          label={t("resizeSidebar")}
+          hint={t("resizeSidebarHint")}
+          onResize={(width) =>
+            setPreferences((p) => ({ ...p, sidebarWidth: width }))
+          }
+          onReset={() => setPreferences((p) => ({ ...p, sidebarWidth: null }))}
+        />
+      )}
       <main className="main">
         <header className="toolbar">
           <div className="breadcrumb">
             <FolderGit2 size={17} />
-            <strong>{repo?.name || t("Seu próximo commit começa aqui")}</strong>
+            <strong title={repo?.name}>
+              {repo?.name || t("Seu próximo commit começa aqui")}
+            </strong>
             {repo && (
               <>
                 <ChevronRight size={14} />
-                <span className="branch-pill">
+                <span
+                  className="branch-pill"
+                  title={
+                    repo.branch === "HEAD destacado"
+                      ? t("HEAD destacado")
+                      : repo.branch
+                  }
+                >
                   <GitBranch size={13} />
-                  {repo.branch === "HEAD destacado"
-                    ? t("HEAD destacado")
-                    : repo.branch}
+                  <span>
+                    {repo.branch === "HEAD destacado"
+                      ? t("HEAD destacado")
+                      : repo.branch}
+                  </span>
                 </span>
               </>
             )}
@@ -896,7 +949,20 @@ function App() {
                 <Plus size={14} /> {t("Nova branch")}{" "}
               </button>
             </section>
-            <div className="workspace">
+            <WorkspaceSplit
+              percent={preferences.historyPercent}
+              onResize={(historyPercent) =>
+                setPreferences((p) => ({ ...p, historyPercent }))
+              }
+              label={t("resizeWorkspace")}
+              hint={t("resizeWorkspaceHint")}
+              valueText={(percent) =>
+                t("workspaceProportions", {
+                  history: Math.round(percent),
+                  changes: Math.round(100 - percent),
+                })
+              }
+            >
               <section className="history-panel" hidden={!!selection}>
                 <div className="panel-heading">
                   <span>
@@ -1320,7 +1386,7 @@ function App() {
                   </form>
                 )}
               </section>
-            </div>
+            </WorkspaceSplit>
           </>
         )}
         <footer className="statusbar">
@@ -1405,7 +1471,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.1.0</span>
+            <span className="statusbar-version">GITLOOM / 0.2.0</span>
           </span>
         </footer>
       </main>

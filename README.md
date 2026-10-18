@@ -2,7 +2,7 @@
 
 Um cliente Git desktop para macOS, feito para acompanhar o histórico, revisar diffs e preparar commits em uma interface focada.
 
-**V1 · versão 0.1.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
+**V1 · versão 0.2.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
 
 ![Workspace do Gitloom com diff e preparação de arquivos](docs/images/workspace.png)
 
@@ -62,11 +62,23 @@ npm run tauri -- build --bundles app
 
 O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. Esta configuração gera um build local; assinatura e notarização para distribuição não fazem parte da V1.
 
+Para gerar o instalador macOS com a janela de instalação personalizada:
+
+```sh
+npm run build:dmg
+```
+
+O comando compila o `.app` com o Tauri e cria o instalador com `dmgbuild`, sem depender da automação do Finder (que pode falhar com timeout no macOS). Requer Python 3.10+; na primeira execução instala as dependências fixadas em `scripts/dmg-requirements.txt` num ambiente isolado em `.toolchain/dmgbuild/`.
+
+O `.dmg` fica em `src-tauri/target/release/bundle/dmg/`. A janela usa um fundo próprio com instruções para arrastar o Gitloom para Applications. O layout é definido em `bundle.macOS.dmg` no `src-tauri/tauri.conf.json`; para recriar o fundo no macOS, execute `swift scripts/generate-dmg-background.swift`. O PNG gerado já está incluído no repositório.
+
 O script `scripts/tauri.mjs` usa o Rust do `PATH`. Se existir uma instalação isolada em `.toolchain/`, ele a detecta e configura somente o processo filho. Essa pasta é local e não faz parte do repositório.
 
 ## Uso
 
 1. Abra um repositório local e consulte o histórico ou as alterações atuais.
+   Use o botão no topo da barra lateral, ao lado da marca para recolher ou expandir a barra lateral. No modo recolhido, os atalhos de repositórios, abertura e configurações continuam disponíveis.
+   Arraste o divisor entre History e Changes para ajustar a proporção dos painéis, inclusive ao visualizar um diff. Com o divisor em foco, use as setas para ajustar (Shift para passos maiores), Home/End para os limites e Enter ou clique duplo para restaurar. O estado da barra lateral e a proporção escolhida são salvos entre sessões.
 2. Selecione um arquivo para revisar o diff no painel esquerdo.
 3. Use **+** para preparar o arquivo ou **−** para retirá-lo do stage. Em arquivos de texto modificados, use **Preparar hunk / Stage hunk** ou **Retirar hunk do stage / Unstage hunk** no cabeçalho do trecho para mover apenas aquela alteração.
 4. Escreva uma mensagem e faça o commit dos arquivos preparados.

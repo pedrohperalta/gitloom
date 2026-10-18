@@ -147,6 +147,12 @@ export const ptBR: Record<MessageKey, string> = {
   movedToStageOther: "{count} arquivos no stage.",
   movedToUnstagedOne: "{count} arquivo para preparar.",
   movedToUnstagedOther: "{count} arquivos para preparar.",
+  collapseSidebar: "Recolher barra lateral",
+  expandSidebar: "Expandir barra lateral",
+  resizeWorkspace: "Redimensionar Histórico e Alterações",
+  resizeWorkspaceHint:
+    "Arraste para redimensionar · Use as setas para ajustar · Clique duas vezes para restaurar",
+  workspaceProportions: "Histórico {history}%, Alterações {changes}%",
   resizeSidebar: "Redimensionar barra lateral",
   resizeSidebarHint:
     "Arraste para redimensionar · Clique duplo para restaurar · Setas para ajustar",

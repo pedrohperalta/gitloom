@@ -8,7 +8,11 @@ export function SidebarDivider({
   hint,
   onResize,
   onReset,
+  className = "sidebar-resizer",
+  valueText,
 }: {
+  className?: string;
+  valueText?: string;
   width: number;
   min: number;
   max: number;
@@ -23,7 +27,7 @@ export function SidebarDivider({
     onResize(Math.round(Math.min(max, Math.max(min, next))));
   return (
     <div
-      className="sidebar-resizer"
+      className={className}
       role="separator"
       tabIndex={0}
       aria-label={label}
@@ -31,6 +35,7 @@ export function SidebarDivider({
       aria-valuemin={min}
       aria-valuemax={max}
       aria-valuenow={width}
+      aria-valuetext={valueText}
       title={hint}
       data-dragging={dragging}
       onDoubleClick={onReset}

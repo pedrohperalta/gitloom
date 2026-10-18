@@ -1707,3 +1707,126 @@ kbd {
 .repository-guidance {
   flex-shrink: 0;
 }
+
+/* Compact navigation keeps repository and settings shortcuts within reach. */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 28px;
+  padding: 0 4px;
+}
+.sidebar-header .brand {
+  margin: 0;
+  gap: 8px;
+  font-size: 26px;
+}
+.sidebar-header .sidebar-toggle {
+  width: 32px;
+  height: 36px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+.sidebar[data-collapsed="true"] {
+  padding: 30px 8px 0;
+}
+.sidebar[data-collapsed="true"] .sidebar-header {
+  justify-content: center;
+  padding: 0;
+}
+.sidebar[data-collapsed="true"] .brand {
+  display: none;
+}
+.sidebar[data-collapsed="true"] .brand > span,
+.sidebar[data-collapsed="true"] .open-repo > span,
+.sidebar[data-collapsed="true"] .open-repo kbd,
+.sidebar[data-collapsed="true"] .recent > span,
+.sidebar[data-collapsed="true"] .sidebar-label,
+.sidebar[data-collapsed="true"] .sidebar-divider,
+.sidebar[data-collapsed="true"] .sidebar-hint,
+.sidebar[data-collapsed="true"] .branch-list,
+.sidebar[data-collapsed="true"] .remote,
+.sidebar[data-collapsed="true"] .preferences-button > span,
+.sidebar[data-collapsed="true"] .preferences-button kbd,
+.sidebar[data-collapsed="true"] .sidebar-bottom {
+  display: none;
+}
+.sidebar[data-collapsed="true"] .open-repo,
+.sidebar[data-collapsed="true"] .recent,
+.sidebar[data-collapsed="true"] .preferences-button {
+  justify-content: center;
+  padding: 12px 0;
+  min-height: 42px;
+}
+.sidebar[data-collapsed="true"] .sidebar-footer {
+  padding-bottom: 16px;
+}
+.toolbar {
+  min-height: 71px;
+  height: auto;
+  gap: 12px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.sidebar-toggle {
+  flex-shrink: 0;
+}
+.breadcrumb {
+  flex: 1;
+}
+.breadcrumb > svg,
+.branch-pill > svg,
+.toolbar-actions {
+  flex-shrink: 0;
+}
+.breadcrumb strong {
+  flex: 0 1 auto;
+  min-width: 60px;
+}
+.branch-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+}
+.branch-pill > span {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.workspace {
+  gap: 0;
+}
+.workspace > .history-panel,
+.workspace > .diff-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+.workspace > .changes-panel {
+  grid-column: 3;
+  grid-row: 1;
+}
+.workspace-resizer {
+  grid-column: 2;
+  grid-row: 1;
+  width: 18px;
+  margin: 0;
+}
+.workspace-resizer::after {
+  left: 8px;
+  top: 12px;
+  bottom: 12px;
+  border-radius: 2px;
+}
+.workspace-resizer::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: calc(50% - 18px);
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border);
+}
