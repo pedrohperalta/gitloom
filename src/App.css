@@ -1830,3 +1830,139 @@ kbd {
   border-radius: 2px;
   background: var(--border);
 }
+
+/* Reference column and committer nodes share the same dimensions in every row. */
+.history-panel {
+  --refs-width: clamp(105px, 20%, 180px);
+}
+.history-columns {
+  justify-content: flex-start;
+  padding-left: 0;
+  gap: 0;
+}
+.refs-heading,
+.commit-refs {
+  width: var(--refs-width);
+  flex-shrink: 0;
+  padding: 0 10px;
+}
+.refs-heading {
+  border-right: 1px solid var(--border);
+}
+.message-heading {
+  flex: 1;
+  padding-left: 14px;
+}
+.commit-refs {
+  height: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 3px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+.commit-refs .ref-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.commit-refs .tag-ref {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+.graph {
+  position: relative;
+}
+.graph-avatar {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 2px solid;
+  border-radius: 50%;
+  background: var(--surface);
+  width: 28px;
+  height: 28px;
+}
+.commit-avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+}
+.commit-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.search-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin: 0 14px;
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.sidebar-item .branch {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.sidebar-item > .icon-button {
+  flex-shrink: 0;
+}
+.repository-section .branch-list {
+  max-height: 220px;
+}
+.sidebar-item small,
+.stash-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin-top: 3px;
+}
+.stash-item .remote > span {
+  min-width: 0;
+  overflow: hidden;
+}
+.stash-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px 8px;
+}
+.stash-actions button {
+  font-size: 0.7rem;
+  padding: 5px;
+}
+.repository-field {
+  display: block;
+}
+.repository-field input {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+}
+.sidebar[data-collapsed="true"] .repository-section {
+  display: none;
+}
+
+.sidebar > * {
+  flex-shrink: 0;
+}
+.repository-section:first-of-type .remote-label {
+  margin-top: 0;
+}

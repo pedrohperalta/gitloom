@@ -90,6 +90,29 @@ test.beforeEach(async ({ page }, testInfo) => {
           conflict: false,
         },
       ],
+      githubRepository: null as string | null,
+      worktrees: [
+        {
+          path: "/tmp/gitloom-playground",
+          branch: "main",
+          locked: false,
+          prunable: false,
+        },
+        {
+          path: "/tmp/linked-worktree",
+          branch: "feature/linked",
+          locked: false,
+          prunable: false,
+        },
+      ],
+      stashes: [
+        {
+          name: "stash@{0}",
+          hash: hash(10),
+          subject: "On main: unfinished work",
+        },
+      ],
+      tags: ["v0.2.0"],
       remotes: ["origin"],
       ahead: 0,
       behind: 0,
@@ -122,6 +145,19 @@ test.beforeEach(async ({ page }, testInfo) => {
       repo.behind = 3;
     }
     if (params.has("no-upstream")) repo.upstream = "";
+    if (params.has("avatars")) {
+      repo.githubRepository = "example/project";
+      Object.assign(repo.commits[0], {
+        committer: "Maria Silva",
+        committerEmail: "maria@example.invalid",
+        refs: "HEAD -> main, origin/main, tag: v0.2.0",
+      });
+      Object.assign(repo.commits[1], {
+        committer: "Offline Person",
+        committerEmail: "offline@example.invalid",
+      });
+    }
+    (window as any).__operations = [];
     const hunkStaged = [false, false];
     let stale = params.has("stale-hunk");
     const hunkPatch = (staged: boolean) => {
@@ -167,6 +203,36 @@ test.beforeEach(async ({ page }, testInfo) => {
           return 'diff --git a/src/App.tsx b/src/App.tsx\n--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,5 @@\n import React from "react";\n-export default function App() {\n+export default function App() {\n+  const title = "Seu Git, com clareza";\n   return <main>Gitloom</main>;\n }';
         if (cmd === "operate") {
           const a = args.action;
+          (window as any).__operations.push(a);
+          if (a.kind === "removeWorktree") {
+            if (params.has("dirty-worktree"))
+              throw "fatal: worktree contains modified or untracked files";
+            repo.worktrees = repo.worktrees.filter((w) => w.path !== a.path);
+          }
+          if (a.kind === "createWorktree")
+            repo.worktrees.push({
+              path: a.path,
+              branch: a.branch || "HEAD",
+              locked: false,
+              prunable: false,
+            });
+          if (a.kind === "createTag") repo.tags.push(a.name);
+          if (a.kind === "deleteTag")
+            repo.tags = repo.tags.filter((name) => name !== a.name);
+          if (a.kind === "checkoutTag") {
+            repo.headDetached = true;
+            repo.branch = "HEAD destacado";
+          }
+          if (a.kind === "dropStash" || a.kind === "popStash")
+            repo.stashes = repo.stashes.filter(
+              (stash) => stash.hash !== a.hash,
+            );
+          if (a.kind === "saveStash")
+            repo.stashes.push({
+              name: "stash@{1}",
+              hash: hash(11),
+              subject: a.message,
+            });
           if (a.kind === "push" && params.has("auth-error"))
             throw "fatal: Authentication failed for remote";
           if (a.kind === "applyHunk") {
@@ -559,7 +625,10 @@ test("preferences: spacing scales with text and sidebar resizing persists within
   const divider = page.locator(".sidebar-resizer:not(.workspace-resizer)");
   await expect(sidebar).toHaveCSS("width", "342px");
   await expect(page.locator(".commit-row").first()).toHaveCSS("height", "72px");
-  await expect(page.locator(".graph").first()).toHaveAttribute("height", "72");
+  await expect(page.locator(".graph svg").first()).toHaveAttribute(
+    "height",
+    "72",
+  );
   await expect(page.locator(".file-row").first()).toHaveCSS("height", "48px");
   const graphRows = await page.locator(".graph").evaluateAll((nodes) =>
     nodes.slice(0, 2).map((node) => {
@@ -967,4 +1036,181 @@ test("long branch names remain fully visible without pushing toolbar actions out
     ).toBe(true);
     await page.screenshot({ path: `test-results/long-branch-${scale}.png` });
   }
+});
+
+test("reference column shows all decorations and graph uses committer photos with initials fallback", async ({
+  page,
+}) => {
+  let avatarRequests = 0;
+  await page.route(
+    "https://api.github.com/repos/example/project/commits/*",
+    async (route) => {
+      avatarRequests++;
+      if (route.request().url().endsWith("6"))
+        await route.fulfill({
+          json: {
+            committer: {
+              avatar_url: "https://avatars.githubusercontent.com/u/42",
+            },
+          },
+        });
+      else await route.fulfill({ status: 404, json: {} });
+    },
+  );
+  await page.route("https://avatars.githubusercontent.com/u/42", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="green"/></svg>',
+    }),
+  );
+  await page.goto("/?avatars");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(page.locator(".refs-heading")).toHaveText("BRANCH / TAG");
+  const first = page.locator(".commit-row").first();
+  await expect(first.locator(".commit-refs .ref-label")).toHaveText([
+    "main",
+    "origin/main",
+    "v0.2.0",
+  ]);
+  await expect(first.locator(".commit-avatar img")).toHaveAttribute(
+    "alt",
+    "Maria Silva",
+  );
+  await expect(
+    page.locator(".commit-row").nth(1).locator(".commit-avatar"),
+  ).toHaveText("OP");
+  await expect(first.locator(".commit-meta")).toContainText("Pedro");
+  await page
+    .getByRole("textbox", { name: "Buscar commits", exact: true })
+    .fill("Merge");
+  await expect(page.locator(".search-avatar img")).toHaveAttribute(
+    "alt",
+    "Maria Silva",
+  );
+  expect(avatarRequests).toBeLessThanOrEqual(6);
+});
+
+test("sidebar creates worktrees and tags, confirms removals and applies stashes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  const worktrees = page.getByRole("region", {
+    name: "WORKTREES",
+    exact: true,
+  });
+  await expect(
+    worktrees.getByRole("button", { name: /feature\/linked/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Criar worktree", exact: true })
+    .click();
+  let dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("Caminho absoluto da pasta")
+    .fill("/tmp/another-tree");
+  await dialog.getByLabel(/Nova branch/).fill("feature/new-tree");
+  await dialog
+    .getByRole("button", { name: "Criar worktree", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    worktrees.getByRole("button", { name: /feature\/new-tree/ }),
+  ).toBeVisible();
+  await worktrees
+    .getByRole("button", {
+      name: "Remover worktree /tmp/another-tree",
+      exact: true,
+    })
+    .click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("/tmp/another-tree");
+  await dialog
+    .getByRole("button", { name: "Remover worktree", exact: true })
+    .click();
+  await expect(
+    worktrees.getByRole("button", { name: /feature\/new-tree/ }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Criar tag", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Nome da tag").fill("v1.0");
+  await dialog.getByRole("button", { name: "Criar tag", exact: true }).click();
+  const tags = page.getByRole("region", { name: "TAGS", exact: true });
+  await expect(
+    tags.getByRole("button", { name: "v1.0", exact: true }),
+  ).toBeVisible();
+  await tags.getByRole("button", { name: "v1.0", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("HEAD destacado");
+  await dialog.getByRole("button", { name: "Abrir tag", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Excluir tag local v1.0", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Excluir tag local", exact: true })
+    .click();
+  await expect(
+    tags.getByRole("button", { name: "v1.0", exact: true }),
+  ).toHaveCount(0);
+  const stashes = page.getByRole("region", { name: "STASHES", exact: true });
+  await stashes.getByRole("button", { name: "Aplicar", exact: true }).click();
+  await expect(stashes).toContainText("unfinished work");
+  await stashes
+    .getByRole("button", { name: "Aplicar e remover stash", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Aplicar e remover stash", exact: true })
+    .click();
+  await expect(stashes).toContainText("Nenhum item");
+  await page.getByRole("button", { name: "Salvar stash", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByLabel("Mensagem do stash")
+    .fill("Work in progress");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Salvar stash", exact: true })
+    .click();
+  await expect(stashes).toContainText("Work in progress");
+  await page.screenshot({ path: "test-results/repository-sections.png" });
+  await worktrees.getByRole("button", { name: /feature\/linked/ }).click();
+  await expect(page.locator(".branch-pill")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("ramo.recents") || "[]")[0].path,
+    ),
+  ).toBe("/tmp/linked-worktree");
+});
+
+test("sidebar keeps removal errors visible and allows retry or cancellation", async ({
+  page,
+}) => {
+  await page.goto("/?dirty-worktree");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Remover worktree /tmp/linked-worktree",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("button", { name: "Remover worktree", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "modified or untracked files",
+  );
+  await dialog.getByRole("button", { name: "Fechar", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /feature\/linked/ }),
+  ).toBeVisible();
 });

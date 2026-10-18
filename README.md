@@ -10,13 +10,16 @@ _Prévia com um repositório fictício._
 
 ## Recursos
 
-- Histórico de todas as branches, grafo de parentesco e busca por mensagem, autor, hash ou referência.
+- Histórico de todas as branches, coluna própria para branches/tags, grafo com foto ou iniciais do committer e busca por mensagem, autor, hash ou referência.
 - Diff unificado no painel esquerdo ao selecionar um arquivo; voltar ao histórico preserva a busca e a posição da lista.
 - Working tree e stage com rolagem independente, stage/unstage por arquivo ou em lote e seleção automática do arquivo movido.
 - Commits com rascunhos salvos por repositório e restaurados após reiniciar; o rascunho é limpo após um commit bem-sucedido.
 - Stage/unstage por hunk em arquivos de texto rastreados e modificados, com rejeição de prévias desatualizadas.
 - Orientação para divergência, upstream ausente, autenticação e operações Git em andamento, preservando os diagnósticos originais.
-- Criação e troca de branches locais; fetch, pull com fast-forward e push.
+- Criação, troca e exclusão de branches locais integradas; branches remotas com checkout rastreado; fetch, pull com fast-forward e push.
+- Worktrees: criar com nova branch ou HEAD destacado, abrir e remover sem forçar alterações ou bloqueios.
+- Stashes: salvar incluindo arquivos novos, aplicar, aplicar e remover ou excluir, com confirmação nas remoções.
+- Tags locais: criar em um commit/referência, abrir com HEAD destacado ou excluir.
 - Oito repositórios recentes, atualização ao retornar à janela e sidebar redimensionável com largura salva.
 - Seis temas, interface em inglês ou português do Brasil e tamanho do texto configurável.
 
@@ -85,6 +88,8 @@ O script `scripts/tauri.mjs` usa o Rust do `PATH`. Se existir uma instalação i
 5. Sincronize com **Fetch**, **Pull** ou **Push**, quando necessário.
 
 O primeiro push usa `origin`, ou o único remoto disponível, e configura o upstream. Se houver ambiguidade entre remotos, configure o destino pelo Git.
+
+Fotos dos committers são carregadas sob demanda do GitHub, usando o ID de emails noreply ou o commit no remoto `origin` do GitHub. A consulta de commits usa a API pública sem login: repositórios privados, commits ainda não enviados, limites da API e falhas de rede podem resultar em iniciais. As consultas são compartilhadas por committer durante a sessão.
 
 ### Atalhos
 

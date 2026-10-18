@@ -1,3 +1,5 @@
+import { CommitAvatar } from "./CommitAvatar";
+import { RepositorySections } from "./RepositorySections";
 import { FlatSelect } from "./FlatSelect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -15,7 +17,6 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
-  GitPullRequest,
   Layers,
   LoaderCircle,
   Minus,
@@ -77,37 +78,41 @@ function Graph({
   row,
   width,
   height,
+  commit,
+  repository,
 }: {
+  commit: Commit;
+  repository?: string | null;
   row: GraphRow;
   width: number;
   height: number;
 }) {
-  const x = (column: number) => 18 + column * 14;
+  const x = (column: number) => 22 + column * 32;
   return (
-    <svg className="graph" width={width} height={height} aria-hidden="true">
-      {row.edges.map((e, i) => {
-        const y1 = e.start === "top" ? 0 : height / 2,
-          y2 = e.end === "node" ? height / 2 : height;
-        return (
-          <path
-            key={i}
-            d={`M ${x(e.from)} ${y1} C ${x(e.from)} ${(y1 + y2) / 2}, ${x(e.to)} ${(y1 + y2) / 2}, ${x(e.to)} ${y2}`}
-            stroke={e.color}
-            strokeWidth="2"
-            fill="none"
-            opacity=".7"
-          />
-        );
-      })}
-      <circle
-        cx={x(row.column)}
-        cy={height / 2}
-        r="4.5"
-        fill="var(--surface)"
-        stroke={row.color}
-        strokeWidth="2.5"
-      />
-    </svg>
+    <div className="graph" style={{ width, height }}>
+      <svg width={width} height={height} aria-hidden="true">
+        {row.edges.map((e, i) => {
+          const y1 = e.start === "top" ? 0 : height / 2,
+            y2 = e.end === "node" ? height / 2 : height;
+          return (
+            <path
+              key={i}
+              d={`M ${x(e.from)} ${y1} C ${x(e.from)} ${(y1 + y2) / 2}, ${x(e.to)} ${(y1 + y2) / 2}, ${x(e.to)} ${y2}`}
+              stroke={e.color}
+              strokeWidth="2"
+              fill="none"
+              opacity=".7"
+            />
+          );
+        })}
+      </svg>
+      <div
+        className="graph-avatar"
+        style={{ left: x(row.column), top: height / 2, borderColor: row.color }}
+      >
+        <CommitAvatar commit={commit} repository={repository} />
+      </div>
+    </div>
   );
 }
 function App() {
@@ -198,7 +203,7 @@ function App() {
     () => layoutGraph(repo?.commits || []),
     [repo?.commits],
   );
-  const graphWidth = Math.max(62, graph.columns * 14 + 28);
+  const graphWidth = Math.max(64, graph.columns * 32 + 12);
   const visibleCommits = useMemo(
     () =>
       (repo?.commits || [])
@@ -321,7 +326,11 @@ function App() {
           }
           setSelection(null);
         }
-        if (action.kind === "switch" || action.kind === "createBranch") {
+        if (
+          ["switch", "createBranch", "checkoutTag", "trackBranch"].includes(
+            action.kind,
+          )
+        ) {
           setCommit(null);
           setSelection(null);
           setBranchDialog(false);
@@ -657,52 +666,17 @@ function App() {
         {repo && (
           <>
             <div className="sidebar-divider" />
-            <div className="sidebar-label">
-              {" "}
-              {t("BRANCHES LOCAIS")}{" "}
-              <button
-                className="icon-button"
-                title={t("Criar branch")}
-                aria-label={t("Criar branch")}
-                disabled={!!busy || operationBlocksNavigation}
-                onClick={() => setBranchDialog(true)}
-              >
-                <Plus size={15} />
-              </button>
-            </div>
-            <nav className="branch-list" aria-label={t("Branches locais")}>
-              {repo.branches
-                .filter((b) => !b.remote)
-                .map((b) => (
-                  <button
-                    key={b.name}
-                    className={`branch ${b.current ? "current" : ""}`}
-                    disabled={!!busy || b.current || operationBlocksNavigation}
-                    onClick={() =>
-                      void act(
-                        { kind: "switch", branch: b.name },
-                        "Trocando de branch",
-                      )
-                    }
-                    title={b.upstream ? `${b.name} → ${b.upstream}` : b.name}
-                  >
-                    <GitBranch size={14} />
-                    <span>{b.name}</span>
-                    {b.current && <Check size={13} />}
-                  </button>
-                ))}
-            </nav>
-            <div className="sidebar-label remote-label">
-              {" "}
-              {t("REMOTOS")} <span>{repo.remotes.length}</span>
-            </div>
-            {repo.remotes.map((r) => (
-              <div className="remote" key={r}>
-                <GitPullRequest size={14} />
-                {r}
-                <span className="connection-dot" />
-              </div>
-            ))}
+            <RepositorySections
+              key={repo.path}
+              repo={repo}
+              error={localizeBackendMessage(error, preferences.language)}
+              busy={!!busy}
+              blocked={operationBlocksNavigation}
+              createBranch={() => setBranchDialog(true)}
+              act={act}
+              openRepository={openRepository}
+              t={t}
+            />
           </>
         )}
         <div className="sidebar-footer">
@@ -1012,7 +986,8 @@ function App() {
                   <ChevronRight size={14} />
                 </button>
                 <div className="history-columns">
-                  <span>
+                  <span className="refs-heading">{t("branchTagColumn")}</span>
+                  <span className="message-heading">
                     {query ? t("RESULTADOS DA BUSCA") : t("GRAFO / MENSAGEM")}
                   </span>
                   <span> {t("DATA")} </span>
@@ -1028,23 +1003,44 @@ function App() {
                       }}
                       title={`${c.subject}\n${c.author} · ${c.hash}`}
                     >
+                      <div className="commit-refs">
+                        {c.refs
+                          .split(", ")
+                          .filter(Boolean)
+                          .map((ref) => (
+                            <span
+                              className={`ref-label ${ref.startsWith("tag: ") ? "tag-ref" : ""}`}
+                              key={ref}
+                              title={ref}
+                            >
+                              {ref
+                                .replace("HEAD -> ", "")
+                                .replace(/^tag: /, "")}
+                            </span>
+                          ))}
+                      </div>
                       {!query && (
                         <Graph
+                          commit={c}
+                          repository={repo.githubRepository}
                           row={row}
                           width={graphWidth}
                           height={historyRowHeight}
                         />
+                      )}
+                      {query && (
+                        <div className="search-avatar">
+                          <CommitAvatar
+                            commit={c}
+                            repository={repo.githubRepository}
+                          />
+                        </div>
                       )}
                       <div className="commit-text">
                         <div className="commit-subject">{c.subject}</div>
                         <div className="commit-meta">
                           <span className="hash">{c.hash.slice(0, 7)}</span>
                           <span>{c.author}</span>
-                          {c.refs && (
-                            <span className="ref-label">
-                              {c.refs.replace("HEAD -> ", "").split(", ")[0]}
-                            </span>
-                          )}
                         </div>
                       </div>
                       <time>{date(c.date)}</time>

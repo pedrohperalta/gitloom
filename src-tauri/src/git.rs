@@ -46,6 +46,11 @@ fn run_output(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Stash runs internal clean commands with its own pathspecs. Literal pathspec
+    // mode would prevent those commands from removing saved untracked files.
+    if args.first() == Some(&"stash") {
+        command.env_remove("GIT_LITERAL_PATHSPECS");
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -158,10 +163,13 @@ fn parse_status(output: &str) -> Vec<FileChange> {
     files
 }
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Commit {
     pub hash: String,
     pub parents: Vec<String>,
     pub author: String,
+    pub committer: String,
+    pub committer_email: String,
     pub date: String,
     pub subject: String,
     pub refs: String,
@@ -174,6 +182,60 @@ pub struct Branch {
     pub remote: bool,
 }
 #[derive(Serialize, Debug)]
+pub struct Worktree {
+    pub path: String,
+    pub branch: String,
+    pub locked: bool,
+    pub prunable: bool,
+}
+#[derive(Serialize, Debug)]
+pub struct Stash {
+    pub name: String,
+    pub hash: String,
+    pub subject: String,
+}
+fn worktrees(root: &Path) -> Result<Vec<Worktree>, String> {
+    let output = run(root, &["worktree", "list", "--porcelain", "-z"], None)?;
+    Ok(output
+        .split("\0\0")
+        .filter_map(|record| {
+            let fields: Vec<_> = record.split('\0').collect();
+            let path = fields.first()?.strip_prefix("worktree ")?;
+            Some(Worktree {
+                path: path.into(),
+                branch: fields
+                    .iter()
+                    .find_map(|f| f.strip_prefix("branch refs/heads/"))
+                    .unwrap_or("HEAD")
+                    .into(),
+                locked: fields
+                    .iter()
+                    .any(|f| *f == "locked" || f.starts_with("locked ")),
+                prunable: fields
+                    .iter()
+                    .any(|f| *f == "prunable" || f.starts_with("prunable ")),
+            })
+        })
+        .collect())
+}
+fn stashes(root: &Path) -> Result<Vec<Stash>, String> {
+    let output = run(
+        root,
+        &["stash", "list", "--format=%gd%x00%H%x00%gs", "-z"],
+        None,
+    )?;
+    Ok(output
+        .split('\0')
+        .collect::<Vec<_>>()
+        .chunks_exact(3)
+        .map(|f| Stash {
+            name: f[0].into(),
+            hash: f[1].into(),
+            subject: f[2].into(),
+        })
+        .collect())
+}
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Repository {
     pub path: String,
@@ -183,6 +245,10 @@ pub struct Repository {
     pub commits: Vec<Commit>,
     pub files: Vec<FileChange>,
     pub remotes: Vec<String>,
+    pub worktrees: Vec<Worktree>,
+    pub stashes: Vec<Stash>,
+    pub tags: Vec<String>,
+    pub github_repository: Option<String>,
     pub ahead: usize,
     pub behind: usize,
     pub has_more: bool,
@@ -265,13 +331,13 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
                 "HEAD",
                 "--topo-order",
                 &count,
-                "--format=%H%x00%P%x00%an%x00%aI%x00%s%x00%D",
+                "--format=%H%x00%P%x00%an%x00%aI%x00%s%x00%D%x00%cn%x00%ce",
                 "-z",
             ],
             None,
         )?;
         let fields: Vec<_> = log.split('\0').collect();
-        for f in fields.chunks_exact(6) {
+        for f in fields.chunks_exact(8) {
             commits.push(Commit {
                 hash: f[0].into(),
                 parents: f[1].split_whitespace().map(str::to_owned).collect(),
@@ -279,6 +345,8 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
                 date: f[3].into(),
                 subject: f[4].into(),
                 refs: f[5].into(),
+                committer: f[6].into(),
+                committer_email: f[7].into(),
             });
         }
     }
@@ -302,6 +370,30 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
             .unwrap_or_default()
             .to_string_lossy()
             .into(),
+        worktrees: worktrees(&root)?,
+        stashes: stashes(&root)?,
+        tags: run(&root, &["tag", "--list", "--sort=-creatordate"], None)?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        github_repository: run(&root, &["remote", "get-url", "origin"], None)
+            .ok()
+            .and_then(|url| {
+                let url = url.trim();
+                let repo = url
+                    .strip_prefix("https://github.com/")
+                    .or_else(|| url.strip_prefix("git@github.com:"))?;
+                let repo = repo.trim_end_matches('/').trim_end_matches(".git");
+                let parts: Vec<_> = repo.split('/').collect();
+                (parts.len() == 2
+                    && parts.iter().all(|part| {
+                        !part.is_empty()
+                            && part
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+                    }))
+                .then(|| repo.to_owned())
+            }),
         branch,
         branches,
         commits,
@@ -455,6 +547,41 @@ pub enum Action {
         expected_diff: String,
         hunk: usize,
     },
+    CreateWorktree {
+        path: String,
+        branch: String,
+    },
+    RemoveWorktree {
+        path: String,
+    },
+    SaveStash {
+        message: String,
+    },
+    ApplyStash {
+        hash: String,
+    },
+    PopStash {
+        hash: String,
+    },
+    DropStash {
+        hash: String,
+    },
+    CreateTag {
+        name: String,
+        revision: String,
+    },
+    DeleteTag {
+        name: String,
+    },
+    CheckoutTag {
+        name: String,
+    },
+    DeleteBranch {
+        branch: String,
+    },
+    TrackBranch {
+        branch: String,
+    },
     Fetch,
     Pull,
     Push,
@@ -584,6 +711,113 @@ pub fn operate(path: &str, action: Action) -> Result<String, String> {
             run(&root, &["check-ref-format", "--branch", &branch], None)?;
             run(&root, &["switch", "-c", &branch], None)
         }
+        Action::CreateWorktree { path, branch } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            if !Path::new(&path).is_absolute() {
+                return Err("absoluteWorktreePath".into());
+            }
+            if branch.is_empty() {
+                run(
+                    &root,
+                    &["worktree", "add", "--detach", "--", &path, "HEAD"],
+                    None,
+                )
+            } else {
+                run(&root, &["check-ref-format", "--branch", &branch], None)?;
+                run(
+                    &root,
+                    &["worktree", "add", "-b", &branch, "--", &path, "HEAD"],
+                    None,
+                )
+            }
+        }
+        Action::RemoveWorktree { path } => {
+            let target = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+            if target == root {
+                return Err("activeWorktreeRemoval".into());
+            }
+            run(&root, &["worktree", "remove", "--", &path], None)
+        }
+        Action::SaveStash { message } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            run(
+                &root,
+                &["stash", "push", "--include-untracked", "-m", &message],
+                None,
+            )
+        }
+        ref stash_action @ (Action::ApplyStash { ref hash }
+        | Action::PopStash { ref hash }
+        | Action::DropStash { ref hash }) => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            let stash = stashes(&root)?
+                .into_iter()
+                .find(|s| s.hash == *hash)
+                .ok_or("staleStash")?;
+            let command = match stash_action {
+                Action::ApplyStash { .. } => "apply",
+                Action::PopStash { .. } => "pop",
+                _ => "drop",
+            };
+            run(&root, &["stash", command, &stash.name], None)
+        }
+        Action::CreateTag { name, revision } => {
+            run(
+                &root,
+                &["check-ref-format", &format!("refs/tags/{name}")],
+                None,
+            )?;
+            let revision = run(
+                &root,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--end-of-options",
+                    &format!("{revision}^{{commit}}"),
+                ],
+                None,
+            )?;
+            run(&root, &["tag", "--", &name, revision.trim()], None)
+        }
+        Action::DeleteTag { name } => run(&root, &["tag", "-d", "--", &name], None),
+        Action::CheckoutTag { name } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            let revision = run(
+                &root,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--end-of-options",
+                    &format!("refs/tags/{name}^{{commit}}"),
+                ],
+                None,
+            )?;
+            run(&root, &["switch", "--detach", revision.trim()], None)
+        }
+        Action::DeleteBranch { branch } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            run(&root, &["branch", "-d", "--", &branch], None)
+        }
+        Action::TrackBranch { branch } => {
+            if operation(&root)?.is_some() {
+                return Err("finishOperation".into());
+            }
+            run(
+                &root,
+                &["switch", "--track", "--end-of-options", &branch],
+                None,
+            )
+        }
         Action::Fetch => run(&root, &["fetch", "--all"], None),
         Action::Pull => {
             if operation(&root)?.is_some() {
@@ -658,6 +892,203 @@ mod tests {
             },
         )
         .unwrap();
+    }
+    #[test]
+    fn sidebar_stash_actions_keep_identity_and_preserve_untracked_files() {
+        let dir = setup();
+        write(&dir, "tracked.txt", "base\n");
+        stage(&dir, &["tracked.txt"]);
+        commit(&dir, "base");
+        write(&dir, "tracked.txt", "first\n");
+        write(&dir, "new.txt", "untracked\n");
+        operate(
+            path(&dir),
+            Action::SaveStash {
+                message: "first stash".into(),
+            },
+        )
+        .unwrap();
+        let first = repository(path(&dir), 100).unwrap();
+        assert_eq!(first.stashes.len(), 1);
+        assert!(first.files.is_empty(), "{:?}", first.files);
+        let first_hash = first.stashes[0].hash.clone();
+        write(&dir, "tracked.txt", "second\n");
+        operate(
+            path(&dir),
+            Action::SaveStash {
+                message: "second stash".into(),
+            },
+        )
+        .unwrap();
+        // The first stash has moved to stash@{1}; select it by hash, not the old index.
+        operate(
+            path(&dir),
+            Action::ApplyStash {
+                hash: first_hash.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "untracked\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+            "first\n"
+        );
+        assert_eq!(repository(path(&dir), 100).unwrap().stashes.len(), 2);
+        operate(
+            path(&dir),
+            Action::DropStash {
+                hash: first_hash.clone(),
+            },
+        )
+        .unwrap();
+        assert!(operate(path(&dir), Action::DropStash { hash: first_hash }).is_err());
+        run(dir.path(), &["restore", "tracked.txt"], None).unwrap();
+        let hash = repository(path(&dir), 100).unwrap().stashes[0].hash.clone();
+        operate(path(&dir), Action::PopStash { hash }).unwrap();
+        assert!(repository(path(&dir), 100).unwrap().stashes.is_empty());
+    }
+    #[test]
+    fn sidebar_worktrees_preserve_dirty_and_locked_directories() {
+        let dir = setup();
+        write(&dir, "a.txt", "base\n");
+        stage(&dir, &["a.txt"]);
+        commit(&dir, "base");
+        let parent = tempfile::tempdir().unwrap();
+        let linked = parent.path().join("linked with spaces");
+        let linked_path = linked.to_str().unwrap().to_owned();
+        operate(
+            path(&dir),
+            Action::CreateWorktree {
+                path: linked_path.clone(),
+                branch: "feature/linked".into(),
+            },
+        )
+        .unwrap();
+        let repo = repository(path(&dir), 100).unwrap();
+        assert_eq!(repo.worktrees.len(), 2);
+        assert!(
+            repo.worktrees
+                .iter()
+                .any(|w| w.branch == "feature/linked" && w.path.ends_with("linked with spaces"))
+        );
+        std::fs::write(linked.join("a.txt"), "dirty\n").unwrap();
+        assert!(
+            operate(
+                path(&dir),
+                Action::RemoveWorktree {
+                    path: linked_path.clone()
+                }
+            )
+            .is_err()
+        );
+        run(&linked, &["restore", "a.txt"], None).unwrap();
+        run(dir.path(), &["worktree", "lock", &linked_path], None).unwrap();
+        assert!(
+            repository(path(&dir), 100)
+                .unwrap()
+                .worktrees
+                .iter()
+                .any(|w| w.locked)
+        );
+        assert!(
+            operate(
+                path(&dir),
+                Action::RemoveWorktree {
+                    path: linked_path.clone()
+                }
+            )
+            .is_err()
+        );
+        run(dir.path(), &["worktree", "unlock", &linked_path], None).unwrap();
+        operate(
+            path(&dir),
+            Action::RemoveWorktree {
+                path: linked_path.clone(),
+            },
+        )
+        .unwrap();
+        operate(
+            path(&dir),
+            Action::CreateWorktree {
+                path: linked_path.clone(),
+                branch: "".into(),
+            },
+        )
+        .unwrap();
+        assert!(repository(&linked_path, 100).unwrap().head_detached);
+        assert!(
+            operate(
+                &linked_path,
+                Action::RemoveWorktree {
+                    path: linked_path.clone()
+                }
+            )
+            .is_err()
+        );
+        operate(path(&dir), Action::RemoveWorktree { path: linked_path }).unwrap();
+    }
+    #[test]
+    fn sidebar_tags_and_committer_metadata_are_independent_of_author() {
+        let dir = setup();
+        write(&dir, "a.txt", "base\n");
+        stage(&dir, &["a.txt"]);
+        run(
+            dir.path(),
+            &[
+                "-c",
+                "user.name=Committer Name",
+                "-c",
+                "user.email=committer@example.invalid",
+                "commit",
+                "--author=Author Name <author@example.invalid>",
+                "-m",
+                "base",
+            ],
+            None,
+        )
+        .unwrap();
+        let repo = repository(path(&dir), 100).unwrap();
+        assert_eq!(repo.commits[0].author, "Author Name");
+        assert_eq!(repo.commits[0].committer, "Committer Name");
+        assert_eq!(repo.commits[0].committer_email, "committer@example.invalid");
+        operate(
+            path(&dir),
+            Action::CreateTag {
+                name: "v1.0".into(),
+                revision: "HEAD".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(repository(path(&dir), 100).unwrap().tags, vec!["v1.0"]);
+        assert!(
+            operate(
+                path(&dir),
+                Action::CreateTag {
+                    name: "--bad".into(),
+                    revision: "HEAD".into()
+                }
+            )
+            .is_err()
+        );
+        operate(
+            path(&dir),
+            Action::CheckoutTag {
+                name: "v1.0".into(),
+            },
+        )
+        .unwrap();
+        assert!(repository(path(&dir), 100).unwrap().head_detached);
+        operate(
+            path(&dir),
+            Action::DeleteTag {
+                name: "v1.0".into(),
+            },
+        )
+        .unwrap();
+        assert!(repository(path(&dir), 100).unwrap().tags.is_empty());
     }
     #[test]
     fn full_workflow_and_unborn_unstage_preserve_worktree() {
@@ -926,6 +1357,75 @@ mod tests {
             run(second.path(), &["rev-parse", "HEAD"], None).unwrap(),
             head
         );
+    }
+    #[test]
+    fn remote_tracking_and_branch_deletion_use_git_safety_checks() {
+        let source = setup();
+        write(&source, "a.txt", "base\n");
+        stage(&source, &["a.txt"]);
+        commit(&source, "base");
+        run(source.path(), &["branch", "feature/remote"], None).unwrap();
+        let local = setup();
+        run(
+            local.path(),
+            &["remote", "add", "origin", path(&source)],
+            None,
+        )
+        .unwrap();
+        operate(path(&local), Action::Fetch).unwrap();
+        operate(
+            path(&local),
+            Action::TrackBranch {
+                branch: "origin/feature/remote".into(),
+            },
+        )
+        .unwrap();
+        let repo = repository(path(&local), 100).unwrap();
+        assert_eq!(repo.branch, "feature/remote");
+        assert_eq!(repo.upstream.as_deref(), Some("origin/feature/remote"));
+        assert!(
+            operate(
+                path(&local),
+                Action::DeleteBranch {
+                    branch: "feature/remote".into()
+                }
+            )
+            .is_err()
+        );
+        operate(
+            path(&local),
+            Action::CreateBranch {
+                branch: "temporary".into(),
+            },
+        )
+        .unwrap();
+        write(&local, "a.txt", "unmerged\n");
+        stage(&local, &["a.txt"]);
+        commit(&local, "unmerged");
+        operate(
+            path(&local),
+            Action::Switch {
+                branch: "feature/remote".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            operate(
+                path(&local),
+                Action::DeleteBranch {
+                    branch: "temporary".into()
+                }
+            )
+            .is_err()
+        );
+        run(local.path(), &["merge", "--ff-only", "temporary"], None).unwrap();
+        operate(
+            path(&local),
+            Action::DeleteBranch {
+                branch: "temporary".into(),
+            },
+        )
+        .unwrap();
     }
     fn separated_changes() -> (TempDir, String) {
         let dir = setup();
