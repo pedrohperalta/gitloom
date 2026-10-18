@@ -1467,7 +1467,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.2.0</span>
+            <span className="statusbar-version">GITLOOM / 0.3.0</span>
           </span>
         </footer>
       </main>

@@ -2,7 +2,7 @@
 
 Um cliente Git desktop para macOS, feito para acompanhar o histórico, revisar diffs e preparar commits em uma interface focada.
 
-**V1 · versão 0.2.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
+**V1 · versão 0.3.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
 
 ![Workspace do Gitloom com diff e preparação de arquivos](docs/images/workspace.png)
 
