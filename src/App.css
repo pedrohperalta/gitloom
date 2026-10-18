@@ -512,7 +512,7 @@ kbd {
   min-height: 0;
 }
 .commit-row {
-  height: var(--history-row-height, 48px);
+  min-height: var(--history-row-height, 48px);
   width: 100%;
   display: flex;
   justify-content: flex-start;
@@ -1601,7 +1601,7 @@ kbd {
 }
 
 /* The divider occupies the sidebar border without taking space from either panel. */
-.sidebar-resizer {
+.resize-handle {
   width: 8px;
   margin: 0 -4px;
   flex-shrink: 0;
@@ -1610,7 +1610,7 @@ kbd {
   touch-action: none;
   position: relative;
 }
-.sidebar-resizer::after {
+.resize-handle::after {
   content: "";
   position: absolute;
   width: 2px;
@@ -1619,16 +1619,16 @@ kbd {
   left: 3px;
   background: transparent;
 }
-.sidebar-resizer:hover::after,
-.sidebar-resizer:focus-visible::after,
-.sidebar-resizer[data-dragging="true"]::after {
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+.resize-handle[data-dragging="true"]::after {
   background: var(--accent);
 }
-.sidebar-resizer:focus-visible {
+.resize-handle:focus-visible {
   outline: none;
 }
-.app-shell:has(.sidebar-resizer[data-dragging="true"]),
-.app-shell:has(.sidebar-resizer[data-dragging="true"]) * {
+.app-shell:has(.resize-handle[data-dragging="true"]),
+.app-shell:has(.resize-handle[data-dragging="true"]) * {
   cursor: col-resize !important;
   user-select: none;
 }
@@ -1832,9 +1832,6 @@ kbd {
 }
 
 /* Reference column and committer nodes share the same dimensions in every row. */
-.history-panel {
-  --refs-width: clamp(105px, 20%, 180px);
-}
 .history-columns {
   justify-content: flex-start;
   padding-left: 0;
@@ -1847,6 +1844,10 @@ kbd {
   padding: 0 10px;
 }
 .refs-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
   border-right: 1px solid var(--border);
 }
 .message-heading {
@@ -1854,19 +1855,23 @@ kbd {
   padding-left: 14px;
 }
 .commit-refs {
-  height: 100%;
+  align-self: stretch;
   display: flex;
   flex-wrap: wrap;
   align-content: center;
-  gap: 3px;
-  overflow: auto;
+  align-items: center;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  gap: 4px;
+  overflow: visible;
   border-right: 1px solid var(--border);
 }
 .commit-refs .ref-label {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
   flex-shrink: 0;
 }
 .commit-refs .tag-ref {
@@ -1875,6 +1880,11 @@ kbd {
 }
 .graph {
   position: relative;
+  align-self: stretch;
+}
+.graph > svg {
+  position: absolute;
+  inset: 0;
 }
 .graph-avatar {
   position: absolute;
@@ -1965,4 +1975,124 @@ kbd {
 }
 .repository-section:first-of-type .remote-label {
   margin-top: 0;
+}
+
+.history-columns {
+  padding-left: 2px;
+}
+.reference-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  margin: 0;
+}
+.section-heading {
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 0 8px;
+}
+.section-heading > .icon-button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.section-toggle {
+  display: flex;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  min-width: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+}
+.section-toggle svg {
+  flex-shrink: 0;
+}
+.section-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.section-count {
+  flex-shrink: 0;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.nested-section .section-heading {
+  margin-top: 6px;
+  padding-left: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.nested-section .branch {
+  padding-left: 24px;
+}
+.branch {
+  text-align: left;
+}
+.branch > span {
+  min-width: 0;
+}
+.sidebar[data-collapsed="true"] .repository-section.recents-section {
+  display: block;
+}
+.repository-dialog {
+  color: var(--text);
+  margin: auto;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+.repository-dialog::backdrop {
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+}
+.repository-dialog .modal-heading h2 {
+  margin: 0 0 16px;
+}
+.repository-dialog p {
+  overflow-wrap: anywhere;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dialog-actions > button {
+  padding: 10px 14px;
+}
+.destructive-action {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.recents-section > .section-heading,
+.sidebar-divider + .repository-section > .section-heading {
+  margin-top: 0;
+}
+.history-columns {
+  height: auto;
+  min-height: 29px;
+}
+.refs-heading {
+  min-height: 29px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.reference-resizer::after {
+  background: var(--border);
+}
+
+.message-heading {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-columns > span:last-child {
+  flex-shrink: 0;
+  padding-left: 8px;
 }

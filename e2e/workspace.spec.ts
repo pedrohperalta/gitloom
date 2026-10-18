@@ -145,6 +145,15 @@ test.beforeEach(async ({ page }, testInfo) => {
       repo.behind = 3;
     }
     if (params.has("no-upstream")) repo.upstream = "";
+    if (params.has("ui-review")) {
+      repo.branches.push({
+        name: "origin/feature/review",
+        current: false,
+        upstream: "",
+        remote: true,
+      });
+      repo.commits[2].refs = "feature/payment-checkout-improvements";
+    }
     if (params.has("avatars")) {
       repo.githubRepository = "example/project";
       Object.assign(repo.commits[0], {
@@ -216,6 +225,10 @@ test.beforeEach(async ({ page }, testInfo) => {
               locked: false,
               prunable: false,
             });
+          if (a.kind === "deleteBranch")
+            repo.branches = repo.branches.filter(
+              (branch) => branch.name !== a.branch,
+            );
           if (a.kind === "createTag") repo.tags.push(a.name);
           if (a.kind === "deleteTag")
             repo.tags = repo.tags.filter((name) => name !== a.name);
@@ -1214,3 +1227,333 @@ test("sidebar keeps removal errors visible and allows retry or cancellation", as
     page.getByRole("button", { name: /feature\/linked/ }),
   ).toBeVisible();
 });
+
+test("Branch / Tag column resizes with mouse and keyboard, retains width, and exposes full names", async ({
+  page,
+}) => {
+  await page.goto("/?ui-review");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  const divider = page.getByRole("separator", {
+    name: "Redimensionar coluna Branch / Tag",
+    exact: true,
+  });
+  await expect(divider).toHaveAttribute("aria-valuenow", "150");
+  const handle = (await divider.boundingBox())!;
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handle.x + handle.width / 2 + 110,
+    handle.y + handle.height / 2,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect(divider).toHaveAttribute("aria-valuenow", "260");
+  const label = page
+    .locator(".commit-refs .ref-label")
+    .filter({ hasText: "feature/payment-checkout-improvements" });
+  expect(
+    await label.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await expect(label).toHaveCSS("text-overflow", "clip");
+  const widths = await page
+    .locator(".refs-heading, .commit-refs")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().width),
+    );
+  expect(widths.every((width) => Math.abs(width - 260) < 1)).toBe(true);
+  await divider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(divider).toHaveAttribute("aria-valuenow", "270");
+  await page.reload();
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(divider).toHaveAttribute("aria-valuenow", "270");
+  await divider.focus();
+  await page.keyboard.press("Home");
+  await expect(divider).toHaveAttribute("aria-valuenow", "100");
+  const refs = label.locator("..");
+  expect(
+    await refs.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  const lines = await label.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return range.getClientRects().length;
+  });
+  expect(lines).toBeGreaterThan(1);
+  const row = label.locator("../..");
+  const rowHeight = (await row.boundingBox())!.height;
+  await expect(row.locator(".graph svg")).toHaveAttribute(
+    "height",
+    String(rowHeight),
+  );
+  await divider.focus();
+  await page.keyboard.press("Enter");
+  await expect(divider).toHaveAttribute("aria-valuenow", "150");
+  await page.setViewportSize({ width: 1080, height: 680 });
+  expect(
+    await page
+      .locator(".workspace")
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+});
+
+test("sidebar sections and remote groups collapse independently and persist", async ({
+  page,
+}) => {
+  await page.goto("/?ui-review");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  for (const title of [
+    "REPOSITÓRIOS",
+    "BRANCHES LOCAIS",
+    "REMOTOS",
+    "WORKTREES",
+    "STASHES",
+    "TAGS",
+    "origin",
+  ]) {
+    const toggle = page.getByRole("button", { name: title, exact: true });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const content = page.locator(
+      `[id="${await toggle.getAttribute("aria-controls")}"]`,
+    );
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(content).toBeHidden();
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(content).toBeVisible();
+  }
+  await page.getByRole("button", { name: "WORKTREES", exact: true }).click();
+  await page.getByRole("button", { name: "origin", exact: true }).click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "WORKTREES", exact: true }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "origin", exact: true }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("button", { name: "TAGS", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await page
+    .getByRole("button", { name: "Criar worktree", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("clicking the selected file toggles back to history for working tree, stage, and historical files", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  const file = page
+    .getByRole("region", { name: "Para preparar", exact: true })
+    .locator(".file-select")
+    .first();
+  await file.click();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+  await expect(file).toHaveAttribute("aria-pressed", "true");
+  await file.click();
+  await expect(page.locator(".history-panel")).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Adicionar ao stage src/App.tsx",
+      exact: true,
+    })
+    .click();
+  const staged = page.locator(".staged-group .file-select").first();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+  await staged.click();
+  await expect(page.locator(".history-panel")).toBeVisible();
+  await staged.click();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+  await staged.click();
+  await page
+    .getByRole("textbox", { name: "Buscar commits", exact: true })
+    .fill("Merge");
+  await page.locator(".commit-row").first().click();
+  const historical = page.locator(".changes-panel .file-select").first();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+  await historical.click();
+  await expect(page.locator(".history-panel")).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Buscar commits", exact: true }),
+  ).toHaveValue("Merge");
+  await expect(page.locator(".commit-row.selected")).toHaveCount(1);
+  await historical.click();
+  await expect(page.locator(".diff-panel")).toBeVisible();
+});
+
+for (const [name, kind, target, confirmLabel] of [
+  [
+    "branch",
+    "deleteBranch",
+    "Excluir branch integrada feature/diff-view",
+    "Excluir branch integrada",
+  ],
+  [
+    "worktree",
+    "removeWorktree",
+    "Remover worktree /tmp/linked-worktree",
+    "Remover worktree",
+  ],
+  ["stash", "dropStash", "Excluir stash stash@{0}", "Excluir stash"],
+  ["tag", "deleteTag", "Excluir tag local v0.2.0", "Excluir tag local"],
+  [
+    "stash pop",
+    "popStash",
+    "Aplicar e remover stash",
+    "Aplicar e remover stash",
+  ],
+]) {
+  test(`destructive ${name} action requires explicit confirmation and cancel does nothing`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "gitloom-playground", exact: true })
+      .click();
+    const operationCount = () =>
+      page.evaluate(
+        (actionKind) =>
+          (window as any).__operations.filter(
+            (operation: any) => operation.kind === actionKind,
+          ).length,
+        kind,
+      );
+    const trigger = page.getByRole("button", { name: target, exact: true });
+    await trigger.click();
+    let dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.screenshot({ path: `test-results/confirmation-${kind}.png` });
+    await expect(
+      dialog.getByRole("button", { name: "Cancelar", exact: true }),
+    ).toBeFocused();
+    expect(await operationCount()).toBe(0);
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    expect(await operationCount()).toBe(0);
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    expect(await operationCount()).toBe(0);
+    await trigger.click();
+    dialog = page.getByRole("dialog");
+    await dialog
+      .getByRole("button", { name: confirmLabel, exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    expect(await operationCount()).toBe(1);
+  });
+}
+
+for (const language of ["en", "pt-BR"]) {
+  for (const scale of [100, 150]) {
+    for (const width of [1080, 1440]) {
+      test(`UI review: ${language} ${scale}% at ${width}px keeps counts adjacent and worktrees left aligned`, async ({
+        page,
+      }) => {
+        await page.addInitScript(
+          ({ language, scale }) => {
+            localStorage.setItem(
+              "gitloom.preferences",
+              JSON.stringify({ language, textScale: scale, theme: "sage" }),
+            );
+          },
+          { language, scale },
+        );
+        await page.setViewportSize({
+          width,
+          height: width === 1080 ? 680 : 900,
+        });
+        await page.goto("/?ui-review");
+        await page
+          .getByRole("button", { name: "gitloom-playground", exact: true })
+          .click();
+        const counts = await page
+          .locator(".section-toggle")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const title = node
+                .querySelector(".section-title")!
+                .getBoundingClientRect();
+              const count = node
+                .querySelector(".section-count")!
+                .getBoundingClientRect();
+              return {
+                gap: count.left - title.right,
+                difference: Math.abs(
+                  count.top + count.height / 2 - title.top - title.height / 2,
+                ),
+              };
+            }),
+          );
+        for (const count of counts) {
+          expect(count.gap).toBeGreaterThanOrEqual(4);
+          expect(count.gap).toBeLessThanOrEqual(8);
+          expect(count.difference).toBeLessThanOrEqual(1);
+        }
+        const worktree = page.getByRole("button", { name: /feature\/linked/ });
+        await expect(worktree).toHaveCSS("text-align", "left");
+        const positions = await worktree.evaluate((node) => {
+          const span = node.querySelector("span")!;
+          const range = document.createRange();
+          range.selectNode(span.firstChild!);
+          return {
+            title: range.getBoundingClientRect().left,
+            subtitle: span.querySelector("small")!.getBoundingClientRect().left,
+          };
+        });
+        expect(
+          Math.abs(positions.title - positions.subtitle),
+        ).toBeLessThanOrEqual(1);
+        expect(
+          await page
+            .locator(".workspace")
+            .evaluate((node) => node.scrollWidth <= node.clientWidth),
+        ).toBe(true);
+        const header = await page
+          .locator(".history-columns")
+          .evaluate((node) => {
+            const title = node
+              .querySelector(".message-heading")!
+              .getBoundingClientRect();
+            const date = node.lastElementChild!.getBoundingClientRect();
+            return {
+              titleRight: title.right,
+              dateLeft: date.left,
+              dateRight: date.right,
+              containerRight: node.getBoundingClientRect().right,
+            };
+          });
+        expect(header.titleRight).toBeLessThanOrEqual(header.dateLeft);
+        expect(header.dateRight).toBeLessThanOrEqual(header.containerRight);
+        await page.screenshot({
+          path: `test-results/ui-review-${language}-${scale}-${width}.png`,
+        });
+        await page.locator(".sidebar").evaluate((node) => {
+          node.scrollTop = node.scrollHeight;
+        });
+        await page
+          .locator(".sidebar")
+          .screenshot({
+            path: `test-results/ui-review-${language}-${scale}-${width}-sidebar-bottom.png`,
+          });
+      });
+    }
+  }
+}

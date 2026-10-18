@@ -27,7 +27,7 @@ export function SidebarDivider({
     onResize(Math.round(Math.min(max, Math.max(min, next))));
   return (
     <div
-      className={className}
+      className={`resize-handle ${className}`}
       role="separator"
       tabIndex={0}
       aria-label={label}

@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { SidebarSection } from "./SidebarSection";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Archive,
   Check,
@@ -15,6 +16,8 @@ import type { MessageKey, MessageParams } from "./i18n";
 
 type Props = {
   repo: Repository;
+  collapsedSections: string[];
+  onToggleSection: (id: string) => void;
   busy: boolean;
   error: string;
   blocked: boolean;
@@ -26,11 +29,14 @@ type Props = {
 type Dialog = {
   title: MessageKey;
   description?: string;
+  destructive?: boolean;
   fields: { label: MessageKey; value: string; required?: boolean }[];
   action: (values: string[]) => Action;
 };
 export function RepositorySections({
   repo,
+  collapsedSections,
+  onToggleSection,
   busy,
   error,
   blocked,
@@ -41,6 +47,16 @@ export function RepositorySections({
 }: Props) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dialogError, setDialogError] = useState(false);
+  const modal = useRef<HTMLDialogElement>(null);
+  const dialogOpen = dialog !== null;
+  useEffect(() => {
+    if (dialogOpen) {
+      modal.current?.showModal();
+      modal.current
+        ?.querySelector<HTMLElement>("[data-initial-focus='true']")
+        ?.focus();
+    }
+  }, [dialogOpen]);
   const show = (value: Dialog) => {
     setDialogError(false);
     setDialog(value);
@@ -70,7 +86,15 @@ export function RepositorySections({
       aria-label={`${t(label)} ${name}`}
       title={t(label)}
       disabled={busy || disabled}
-      onClick={() => confirm(label, name, action)}
+      onClick={() =>
+        show({
+          title: label,
+          description: t("confirmRemoval", { name }),
+          destructive: true,
+          fields: [],
+          action: () => action,
+        })
+      }
     >
       <Trash2 size={13} />
     </button>
@@ -81,15 +105,18 @@ export function RepositorySections({
     action: ReactNode,
     children: ReactNode,
   ) => (
-    <section className="repository-section" aria-label={t(title)}>
-      <div className="sidebar-label remote-label">
-        {t(title)} <span>{count}</span>
-        {action}
-      </div>
+    <SidebarSection
+      id={title}
+      title={t(title)}
+      count={count}
+      collapsed={collapsedSections.includes(title)}
+      onToggle={onToggleSection}
+      actions={action}
+    >
       <div className="branch-list">
         {count ? children : <p className="sidebar-hint">{t("sectionEmpty")}</p>}
       </div>
-    </section>
+    </SidebarSection>
   );
   return (
     <>
@@ -138,11 +165,22 @@ export function RepositorySections({
           <RefreshCw size={14} />
         </button>,
         repo.remotes.map((remote) => (
-          <div key={remote}>
-            <div className="remote">
-              <GitBranch size={14} />
-              {remote}
-            </div>
+          <SidebarSection
+            key={remote}
+            id={`remote:${remote}`}
+            title={remote}
+            count={
+              repo.branches.filter(
+                (branch) =>
+                  branch.remote &&
+                  branch.name.startsWith(`${remote}/`) &&
+                  !branch.name.endsWith("/HEAD"),
+              ).length
+            }
+            collapsed={collapsedSections.includes(`remote:${remote}`)}
+            onToggle={onToggleSection}
+            nested
+          >
             {repo.branches
               .filter(
                 (branch) =>
@@ -164,7 +202,7 @@ export function RepositorySections({
                   <span>{branch.name}</span>
                 </button>
               ))}
-          </div>
+          </SidebarSection>
         )),
       )}
       {section(
@@ -245,10 +283,16 @@ export function RepositorySections({
               <button
                 disabled={busy || blocked}
                 onClick={() =>
-                  confirm("popStash", stash.subject, {
-                    kind: "popStash",
-                    hash: stash.hash,
-                  })
+                  confirm(
+                    "popStash",
+                    t("confirmPopStash", {
+                      name: `${stash.name}: ${stash.subject}`,
+                    }),
+                    {
+                      kind: "popStash",
+                      hash: stash.hash,
+                    },
+                  )
                 }
               >
                 {t("popStash")}
@@ -304,17 +348,16 @@ export function RepositorySections({
         )),
       )}
       {dialog && (
-        <div
-          className="modal-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget && !busy) setDialog(null);
+        <dialog
+          ref={modal}
+          className="modal repository-dialog"
+          aria-label={t(dialog.title)}
+          onCancel={(event) => {
+            if (busy) event.preventDefault();
+            else setDialog(null);
           }}
         >
           <form
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t(dialog.title)}
             onSubmit={async (event) => {
               event.preventDefault();
               setDialogError(false);
@@ -347,7 +390,7 @@ export function RepositorySections({
               <label key={field.label} className="repository-field">
                 {t(field.label)}
                 <input
-                  autoFocus={index === 0}
+                  data-initial-focus={index === 0}
                   disabled={busy}
                   required={field.required}
                   value={field.value}
@@ -367,19 +410,29 @@ export function RepositorySections({
             {dialogError && (
               <p role="alert">{error || t("operationFailedReview")}</p>
             )}
-            <button
-              className="primary"
-              disabled={
-                busy ||
-                dialog.fields.some(
-                  (field) => field.required && !field.value.trim(),
-                )
-              }
-            >
-              {t(dialog.title)}
-            </button>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                data-initial-focus={!dialog.fields.length}
+                disabled={busy}
+                onClick={() => setDialog(null)}
+              >
+                {t("cancelAction")}
+              </button>
+              <button
+                className={`primary ${dialog.destructive ? "destructive-action" : ""}`}
+                disabled={
+                  busy ||
+                  dialog.fields.some(
+                    (field) => field.required && !field.value.trim(),
+                  )
+                }
+              >
+                {t(dialog.title)}
+              </button>
+            </div>
           </form>
-        </div>
+        </dialog>
       )}
     </>
   );

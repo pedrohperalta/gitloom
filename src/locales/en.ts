@@ -1,4 +1,11 @@
 export const en = {
+  resizeReferenceColumn: "Resize Branch / Tag column",
+  resizeReferenceColumnHint:
+    "Drag or use arrow keys to resize; double-click or Enter to reset.",
+  confirmRemoval: "Delete “{name}”? Confirm to remove this item.",
+  confirmPopStash:
+    "Apply and remove “{name}”? Git keeps the stash if conflicts occur.",
+  cancelAction: "Cancel",
   branchTagColumn: "BRANCH / TAG",
   worktrees: "WORKTREES",
   stashes: "STASHES",

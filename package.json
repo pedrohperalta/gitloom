@@ -1,7 +1,7 @@
 {
   "name": "gitloom",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "tauri": "node scripts/tauri.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:ui": "playwright test --grep \"UI review:|Branch / Tag column|sidebar sections|clicking the selected|destructive\"",
     "format": "prettier --write src scripts e2e *.ts *.json README.md",
     "build:dmg": "node scripts/build-dmg.mjs"
   },

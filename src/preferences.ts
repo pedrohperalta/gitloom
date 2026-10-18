@@ -21,6 +21,8 @@ export type Preferences = {
   sidebarWidth: number | null;
   sidebarCollapsed: boolean;
   historyPercent: number;
+  referenceColumnWidth: number;
+  collapsedSidebarSections: string[];
 };
 const defaults: Preferences = {
   theme: "dark",
@@ -30,6 +32,8 @@ const defaults: Preferences = {
   sidebarWidth: null,
   sidebarCollapsed: false,
   historyPercent: 58.33,
+  referenceColumnWidth: 150,
+  collapsedSidebarSections: [],
 };
 const storageKey = "gitloom.preferences";
 export function readPreferences(): Preferences {
@@ -37,6 +41,23 @@ export function readPreferences(): Preferences {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
     return {
       sidebarCollapsed: saved?.sidebarCollapsed === true,
+      referenceColumnWidth:
+        typeof saved?.referenceColumnWidth === "number" &&
+        Number.isFinite(saved.referenceColumnWidth) &&
+        saved.referenceColumnWidth >= 100 &&
+        saved.referenceColumnWidth <= 800
+          ? saved.referenceColumnWidth
+          : defaults.referenceColumnWidth,
+      collapsedSidebarSections: Array.isArray(saved?.collapsedSidebarSections)
+        ? [
+            ...new Set<string>(
+              saved.collapsedSidebarSections.filter(
+                (id: unknown): id is string =>
+                  typeof id === "string" && id.length <= 200,
+              ),
+            ),
+          ].slice(0, 100)
+        : [],
       historyPercent:
         typeof saved?.historyPercent === "number" &&
         Number.isFinite(saved.historyPercent) &&

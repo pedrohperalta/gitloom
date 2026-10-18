@@ -2,7 +2,7 @@
 
 Um cliente Git desktop para macOS, feito para acompanhar o histórico, revisar diffs e preparar commits em uma interface focada.
 
-**V1 · versão 0.3.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
+**V1 · versão 0.4.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
 
 ![Workspace do Gitloom com diff e preparação de arquivos](docs/images/workspace.png)
 
@@ -110,6 +110,9 @@ Abra **Settings / Configurações** na sidebar. As alterações são aplicadas i
 - **Idiomas:** English (padrão) e Português (Brasil). Conteúdo dos arquivos, mensagens de commits e saídas originais do Git mantêm seu idioma.
 - **Texto:** 100%, 110%, 125%, 140% ou 150%, também ajustável pela barra inferior. A altura das linhas acompanha a escala.
 - **Diff:** fonte independente, de 10 a 24 px.
+- **Histórico:** arraste a divisória do cabeçalho Branch / Tag para ajustar a coluna. Com a divisória em foco, use as setas; Home/End selecionam os limites e Enter ou clique duplo restaura a largura padrão. A largura é salva; referências longas quebram linha e o grafo acompanha a altura resultante.
+- **Navegação:** clique no título de uma seção da sidebar para recolher ou expandir seu conteúdo. O estado é salvo, inclusive para os grupos de remotos.
+- **Diff:** um segundo clique no arquivo selecionado volta ao histórico, mantendo a busca e o commit selecionado.
 - **Sidebar:** arraste a borda direita para ajustar a largura. Clique duplo restaura a largura automática. Com a divisória em foco, use as setas; Shift acelera o ajuste, Home/End selecionam os limites e Enter restaura o padrão.
 
 ## Arquitetura
@@ -149,6 +152,18 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 | Vitest      | Grafo, diff, traduções e validação das preferências         |
 | Playwright  | Workspace, commits, stage, temas, idiomas, escala e sidebar |
 | Cargo       | Operações Git reais em repositórios temporários             |
+
+### Revisão de UI antes de uma release
+
+Mudanças de interface precisam de evidência por comportamento, além do resultado do build. Execute `npm run test:ui` durante o ajuste e a suíte completa `npm run test:e2e` antes da publicação.
+
+- Verifique a coluna Branch / Tag com nomes longos: arrastar, teclado, restaurar, persistir após reload, quebra de linha sem truncamento e continuidade do grafo.
+- Recolha e expanda cada seção e cada remoto por mouse e teclado. Confirme que o estado persiste e que os botões de ação continuam acessíveis.
+- Confira contadores junto aos títulos e alinhamento à esquerda de nomes e subtítulos das worktrees.
+- Abra e feche o diff clicando no mesmo arquivo, em alterações locais, stage e commits históricos. Preserve busca e seleção do commit.
+- Exercite cada exclusão: abrir confirmação não executa a operação; Cancelar e Escape preservam o item; só confirmar executa a ação. O foco inicial deve ficar em Cancelar.
+- Inspecione as capturas `test-results/ui-review-*.png`, geradas em inglês e português, nas escalas 100% e 150%, com janelas de 1080 e 1440 px. Testes de geometria verificam os alinhamentos; as capturas exigem revisão visual, não são snapshots aprovados automaticamente.
+- Antes de publicar, abra o aplicativo do pacote gerado no macOS e repita os fluxos alterados. A validação no navegador com backend simulado não substitui essa verificação do pacote nativo.
 
 O Playwright inicia o Vite automaticamente e usa o Chrome instalado, sem caminhos específicos de uma máquina. Seus testes não substituem os testes do backend com Git real.
 

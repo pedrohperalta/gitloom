@@ -1,5 +1,12 @@
 import type { MessageKey } from "./en";
 export const ptBR: Record<MessageKey, string> = {
+  resizeReferenceColumn: "Redimensionar coluna Branch / Tag",
+  resizeReferenceColumnHint:
+    "Arraste ou use as setas para ajustar; clique duplo ou Enter restaura o padrão.",
+  confirmRemoval: "Excluir “{name}”? Confirme para remover este item.",
+  confirmPopStash:
+    "Aplicar e remover “{name}”? O Git mantém o stash se ocorrerem conflitos.",
+  cancelAction: "Cancelar",
   branchTagColumn: "BRANCH / TAG",
   worktrees: "WORKTREES",
   stashes: "STASHES",

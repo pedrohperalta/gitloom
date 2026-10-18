@@ -57,6 +57,8 @@ describe("preferences", () => {
         sidebarWidth: null,
         sidebarCollapsed: false,
         historyPercent: 58.33,
+        referenceColumnWidth: 150,
+        collapsedSidebarSections: [],
       });
     }
   });
@@ -75,6 +77,32 @@ describe("preferences", () => {
       });
     }
   });
+  it("validates saved reference widths and collapsed sections while migrating older preferences", () => {
+    for (const width of [null, "300", -1, 99, 801]) {
+      vi.stubGlobal("localStorage", {
+        getItem: () =>
+          JSON.stringify({
+            referenceColumnWidth: width,
+            collapsedSidebarSections: ["worktrees", null, 7, "tags", "tags"],
+          }),
+      });
+      expect(readPreferences()).toMatchObject({
+        referenceColumnWidth: 150,
+        collapsedSidebarSections: ["worktrees", "tags"],
+      });
+    }
+    vi.stubGlobal("localStorage", {
+      getItem: () =>
+        JSON.stringify({
+          referenceColumnWidth: 320,
+          collapsedSidebarSections: "worktrees",
+        }),
+    });
+    expect(readPreferences()).toMatchObject({
+      referenceColumnWidth: 320,
+      collapsedSidebarSections: [],
+    });
+  });
   it("reads explicit choices and resolves system theme", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => '{"theme":"darcula","language":"pt-BR"}',
@@ -87,6 +115,8 @@ describe("preferences", () => {
       sidebarWidth: null,
       sidebarCollapsed: false,
       historyPercent: 58.33,
+      referenceColumnWidth: 150,
+      collapsedSidebarSections: [],
     });
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     expect(resolveTheme("system")).toBe("dark");

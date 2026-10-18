@@ -1,3 +1,5 @@
+import { SidebarSection } from "./SidebarSection";
+import { ReferenceColumn } from "./ReferenceColumn";
 import { CommitAvatar } from "./CommitAvatar";
 import { RepositorySections } from "./RepositorySections";
 import { FlatSelect } from "./FlatSelect";
@@ -87,13 +89,22 @@ function Graph({
   width: number;
   height: number;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [rowHeight, setRowHeight] = useState(height);
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) =>
+      setRowHeight(entry.contentRect.height),
+    );
+    if (ref.current?.parentElement) observer.observe(ref.current.parentElement);
+    return () => observer.disconnect();
+  }, []);
   const x = (column: number) => 22 + column * 32;
   return (
-    <div className="graph" style={{ width, height }}>
-      <svg width={width} height={height} aria-hidden="true">
+    <div ref={ref} className="graph" style={{ width }}>
+      <svg width={width} height={rowHeight} aria-hidden="true">
         {row.edges.map((e, i) => {
-          const y1 = e.start === "top" ? 0 : height / 2,
-            y2 = e.end === "node" ? height / 2 : height;
+          const y1 = e.start === "top" ? 0 : rowHeight / 2,
+            y2 = e.end === "node" ? rowHeight / 2 : rowHeight;
           return (
             <path
               key={i}
@@ -108,7 +119,11 @@ function Graph({
       </svg>
       <div
         className="graph-avatar"
-        style={{ left: x(row.column), top: height / 2, borderColor: row.color }}
+        style={{
+          left: x(row.column),
+          top: rowHeight / 2,
+          borderColor: row.color,
+        }}
       >
         <CommitAvatar commit={commit} repository={repository} />
       </div>
@@ -117,6 +132,13 @@ function Graph({
 }
 function App() {
   const { preferences, setPreferences, t } = usePreferences();
+  const toggleSidebarSection = (id: string) =>
+    setPreferences((p) => ({
+      ...p,
+      collapsedSidebarSections: p.collapsedSidebarSections.includes(id)
+        ? p.collapsedSidebarSections.filter((section) => section !== id)
+        : [...p.collapsedSidebarSections, id],
+    }));
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   useEffect(() => {
     const resize = () => setViewportWidth(window.innerWidth);
@@ -545,7 +567,18 @@ function App() {
         title={
           file.originalPath ? `${file.originalPath} → ${file.path}` : file.path
         }
-        onClick={() => setSelection({ file, staged: inIndex })}
+        aria-pressed={
+          selection?.file.path === file.path &&
+          (historical || selection.staged === inIndex)
+        }
+        onClick={() =>
+          setSelection((current) =>
+            current?.file.path === file.path &&
+            (historical || current.staged === inIndex)
+              ? null
+              : { file, staged: inIndex },
+          )
+        }
       >
         <span
           className={`file-status ${file.conflict ? "conflict" : (inIndex ? file.index : file.worktree) === "D" ? "deleted" : ""}`}
@@ -635,40 +668,45 @@ function App() {
           <span>{t("Abrir repositório")}</span>
           <kbd>⌘ O</kbd>
         </button>
-        <div className="sidebar-label">
-          {" "}
-          {t("REPOSITÓRIOS")}{" "}
-          <span>{recents.length.toString().padStart(2, "0")}</span>
-        </div>
-        <nav className="recent-list" aria-label={t("Repositórios recentes")}>
-          {recents.map((r) => (
-            <button
-              key={r.path}
-              aria-label={r.name}
-              title={`${r.name} — ${r.path}`}
-              className={`recent ${repo?.path === r.path ? "active" : ""}`}
-              disabled={!!busy}
-              onClick={() => void openRepository(r.path)}
-            >
-              <FolderGit2 size={17} />
-              <span>{r.name}</span>
-              {repo?.path === r.path && <span className="active-dot" />}
-            </button>
-          ))}
-          {!recents.length && (
-            <p className="sidebar-hint">
-              {" "}
-              {t("Seus repositórios recentes")} <br />{" "}
-              {t("aparecem aqui.")}{" "}
-            </p>
-          )}
-        </nav>
+        <SidebarSection
+          id="recents"
+          title={t("REPOSITÓRIOS")}
+          count={recents.length}
+          collapsed={preferences.collapsedSidebarSections.includes("recents")}
+          onToggle={toggleSidebarSection}
+        >
+          <nav className="recent-list" aria-label={t("Repositórios recentes")}>
+            {recents.map((r) => (
+              <button
+                key={r.path}
+                aria-label={r.name}
+                title={`${r.name} — ${r.path}`}
+                className={`recent ${repo?.path === r.path ? "active" : ""}`}
+                disabled={!!busy}
+                onClick={() => void openRepository(r.path)}
+              >
+                <FolderGit2 size={17} />
+                <span>{r.name}</span>
+                {repo?.path === r.path && <span className="active-dot" />}
+              </button>
+            ))}
+            {!recents.length && (
+              <p className="sidebar-hint">
+                {" "}
+                {t("Seus repositórios recentes")} <br />{" "}
+                {t("aparecem aqui.")}{" "}
+              </p>
+            )}
+          </nav>
+        </SidebarSection>
         {repo && (
           <>
             <div className="sidebar-divider" />
             <RepositorySections
               key={repo.path}
               repo={repo}
+              collapsedSections={preferences.collapsedSidebarSections}
+              onToggleSection={toggleSidebarSection}
               error={localizeBackendMessage(error, preferences.language)}
               busy={!!busy}
               blocked={operationBlocksNavigation}
@@ -937,168 +975,179 @@ function App() {
                 })
               }
             >
-              <section className="history-panel" hidden={!!selection}>
-                <div className="panel-heading">
-                  <span>
-                    <GitCommitHorizontal size={17} /> {t("Histórico")}{" "}
-                  </span>
-                  <span className="muted">
-                    {repo.commits.length} {t("commits")}{" "}
-                  </span>
-                </div>
-                <div className="search-wrap">
-                  <Search size={15} />
-                  <input
-                    aria-label={t("Buscar commits")}
-                    placeholder={t("Buscar commit, autor ou hash…")}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  {query && (
-                    <button
-                      className="icon-button"
-                      aria-label={t("Limpar busca")}
-                      onClick={() => setQuery("")}
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-                <button
-                  className={`working-tree ${!commit ? "active" : ""}`}
-                  onClick={() => {
-                    setCommit(null);
-                    setSelection(null);
-                  }}
-                >
-                  <div className="working-icon">
-                    <Layers size={17} />
-                  </div>
-                  <div>
-                    <strong> {t("Alterações locais")} </strong>
-                    <span>
-                      {repo.files.length
-                        ? t("Prepare seu próximo commit")
-                        : t("Nenhuma alteração pendente")}
-                    </span>
-                  </div>
-                  <span className="count">{repo.files.length}</span>
-                  <ChevronRight size={14} />
-                </button>
-                <div className="history-columns">
-                  <span className="refs-heading">{t("branchTagColumn")}</span>
-                  <span className="message-heading">
-                    {query ? t("RESULTADOS DA BUSCA") : t("GRAFO / MENSAGEM")}
-                  </span>
-                  <span> {t("DATA")} </span>
-                </div>
-                <div className="commit-list">
-                  {visibleCommits.map(({ commit: c, row }) => (
-                    <button
-                      key={c.hash}
-                      className={`commit-row ${commit?.hash === c.hash ? "selected" : ""}`}
-                      onClick={() => {
-                        setCommit(c);
-                        setError("");
-                      }}
-                      title={`${c.subject}\n${c.author} · ${c.hash}`}
-                    >
-                      <div className="commit-refs">
-                        {c.refs
-                          .split(", ")
-                          .filter(Boolean)
-                          .map((ref) => (
-                            <span
-                              className={`ref-label ${ref.startsWith("tag: ") ? "tag-ref" : ""}`}
-                              key={ref}
-                              title={ref}
-                            >
-                              {ref
-                                .replace("HEAD -> ", "")
-                                .replace(/^tag: /, "")}
-                            </span>
-                          ))}
-                      </div>
-                      {!query && (
-                        <Graph
-                          commit={c}
-                          repository={repo.githubRepository}
-                          row={row}
-                          width={graphWidth}
-                          height={historyRowHeight}
-                        />
-                      )}
-                      {query && (
-                        <div className="search-avatar">
-                          <CommitAvatar
-                            commit={c}
-                            repository={repo.githubRepository}
-                          />
-                        </div>
-                      )}
-                      <div className="commit-text">
-                        <div className="commit-subject">{c.subject}</div>
-                        <div className="commit-meta">
-                          <span className="hash">{c.hash.slice(0, 7)}</span>
-                          <span>{c.author}</span>
-                        </div>
-                      </div>
-                      <time>{date(c.date)}</time>
-                    </button>
-                  ))}
-                  {!visibleCommits.length && (
-                    <div className="empty-state compact">
-                      <GitCommitHorizontal size={26} />
-                      <strong>
-                        {query
-                          ? t("Nenhum commit encontrado")
-                          : t("Uma história para começar")}
-                      </strong>
-                      <p>
-                        {query
-                          ? t("Tente outro autor, hash ou mensagem.")
-                          : t(
-                              "Adicione seus arquivos e crie o primeiro commit.",
-                            )}
-                      </p>
+              <ReferenceColumn
+                width={preferences.referenceColumnWidth}
+                onResize={(referenceColumnWidth) =>
+                  setPreferences((p) => ({ ...p, referenceColumnWidth }))
+                }
+                label={t("resizeReferenceColumn")}
+                hint={t("resizeReferenceColumnHint")}
+                title={t("branchTagColumn")}
+                messageTitle={
+                  query ? t("RESULTADOS DA BUSCA") : t("GRAFO / MENSAGEM")
+                }
+                dateTitle={t("DATA")}
+                hidden={!!selection}
+              >
+                {(heading) => (
+                  <>
+                    <div className="panel-heading">
+                      <span>
+                        <GitCommitHorizontal size={17} /> {t("Histórico")}{" "}
+                      </span>
+                      <span className="muted">
+                        {repo.commits.length} {t("commits")}{" "}
+                      </span>
                     </div>
-                  )}
-                  {repo.hasMore && !query && (
+                    <div className="search-wrap">
+                      <Search size={15} />
+                      <input
+                        aria-label={t("Buscar commits")}
+                        placeholder={t("Buscar commit, autor ou hash…")}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                      {query && (
+                        <button
+                          className="icon-button"
+                          aria-label={t("Limpar busca")}
+                          onClick={() => setQuery("")}
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
                     <button
-                      className="load-more"
-                      disabled={!!busy || limit >= 5000}
-                      onClick={async () => {
-                        const next = Math.min(limit + 400, 5000);
-                        setLimit(next);
-                        busyRef.current = true;
-                        setBusy("Carregando histórico");
-                        try {
-                          await load(repo.path, next);
-                        } catch (e) {
-                          setError(String(e));
-                        } finally {
-                          busyRef.current = false;
-                          setBusy("");
-                        }
+                      className={`working-tree ${!commit ? "active" : ""}`}
+                      onClick={() => {
+                        setCommit(null);
+                        setSelection(null);
                       }}
                     >
-                      {limit >= 5000
-                        ? t("Limite de 5.000 commits nesta versão")
-                        : t("Carregar mais commits")}
+                      <div className="working-icon">
+                        <Layers size={17} />
+                      </div>
+                      <div>
+                        <strong> {t("Alterações locais")} </strong>
+                        <span>
+                          {repo.files.length
+                            ? t("Prepare seu próximo commit")
+                            : t("Nenhuma alteração pendente")}
+                        </span>
+                      </div>
+                      <span className="count">{repo.files.length}</span>
+                      <ChevronRight size={14} />
                     </button>
-                  )}
-                </div>
-                <div className="history-footer">
-                  <span className="local-dot" />
-                  {query
-                    ? t("Busca nos commits carregados")
-                    : t("Todas as branches")}
-                  <span>
-                    <GitBranch size={12} />
-                    {repo.branches.filter((b) => !b.remote).length}
-                  </span>
-                </div>
-              </section>
+                    {heading}
+                    <div className="commit-list">
+                      {visibleCommits.map(({ commit: c, row }) => (
+                        <button
+                          key={c.hash}
+                          className={`commit-row ${commit?.hash === c.hash ? "selected" : ""}`}
+                          onClick={() => {
+                            setCommit(c);
+                            setError("");
+                          }}
+                          title={`${c.subject}\n${c.author} · ${c.hash}`}
+                        >
+                          <div className="commit-refs">
+                            {c.refs
+                              .split(", ")
+                              .filter(Boolean)
+                              .map((ref) => (
+                                <span
+                                  className={`ref-label ${ref.startsWith("tag: ") ? "tag-ref" : ""}`}
+                                  key={ref}
+                                  title={ref}
+                                >
+                                  {ref
+                                    .replace("HEAD -> ", "")
+                                    .replace(/^tag: /, "")}
+                                </span>
+                              ))}
+                          </div>
+                          {!query && (
+                            <Graph
+                              commit={c}
+                              repository={repo.githubRepository}
+                              row={row}
+                              width={graphWidth}
+                              height={historyRowHeight}
+                            />
+                          )}
+                          {query && (
+                            <div className="search-avatar">
+                              <CommitAvatar
+                                commit={c}
+                                repository={repo.githubRepository}
+                              />
+                            </div>
+                          )}
+                          <div className="commit-text">
+                            <div className="commit-subject">{c.subject}</div>
+                            <div className="commit-meta">
+                              <span className="hash">{c.hash.slice(0, 7)}</span>
+                              <span>{c.author}</span>
+                            </div>
+                          </div>
+                          <time>{date(c.date)}</time>
+                        </button>
+                      ))}
+                      {!visibleCommits.length && (
+                        <div className="empty-state compact">
+                          <GitCommitHorizontal size={26} />
+                          <strong>
+                            {query
+                              ? t("Nenhum commit encontrado")
+                              : t("Uma história para começar")}
+                          </strong>
+                          <p>
+                            {query
+                              ? t("Tente outro autor, hash ou mensagem.")
+                              : t(
+                                  "Adicione seus arquivos e crie o primeiro commit.",
+                                )}
+                          </p>
+                        </div>
+                      )}
+                      {repo.hasMore && !query && (
+                        <button
+                          className="load-more"
+                          disabled={!!busy || limit >= 5000}
+                          onClick={async () => {
+                            const next = Math.min(limit + 400, 5000);
+                            setLimit(next);
+                            busyRef.current = true;
+                            setBusy("Carregando histórico");
+                            try {
+                              await load(repo.path, next);
+                            } catch (e) {
+                              setError(String(e));
+                            } finally {
+                              busyRef.current = false;
+                              setBusy("");
+                            }
+                          }}
+                        >
+                          {limit >= 5000
+                            ? t("Limite de 5.000 commits nesta versão")
+                            : t("Carregar mais commits")}
+                        </button>
+                      )}
+                    </div>
+                    <div className="history-footer">
+                      <span className="local-dot" />
+                      {query
+                        ? t("Busca nos commits carregados")
+                        : t("Todas as branches")}
+                      <span>
+                        <GitBranch size={12} />
+                        {repo.branches.filter((b) => !b.remote).length}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </ReferenceColumn>
               {selection && (
                 <section
                   className="diff-panel"
@@ -1467,7 +1516,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.3.0</span>
+            <span className="statusbar-version">GITLOOM / 0.4.0</span>
           </span>
         </footer>
       </main>
