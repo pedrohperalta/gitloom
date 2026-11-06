@@ -771,6 +771,15 @@ function App() {
                       : repo.branch}
                   </span>
                 </span>
+                <button
+                  className="icon-button"
+                  aria-label={t("Nova branch")}
+                  title={t("Nova branch")}
+                  disabled={!!busy || operationBlocksNavigation}
+                  onClick={() => setBranchDialog(true)}
+                >
+                  <Plus size={16} />
+                </button>
               </>
             )}
           </div>
@@ -935,33 +944,10 @@ function App() {
           </div>
         ) : (
           <>
-            <section className="workspace-heading">
-              <div className="eyebrow">WORKSPACE</div>
-              <h1>
-                <span className="repo-name">{repo.name}</span>
-                <span className="repo-state">
-                  {repo.files.length
-                    ? t(
-                        repo.files.length === 1
-                          ? "changedFile"
-                          : "changedFiles",
-                        { count: repo.files.length },
-                      )
-                    : t("Tudo em dia")}
-                </span>
-              </h1>
-              <button
-                className="quiet-button"
-                disabled={!!busy || operationBlocksNavigation}
-                onClick={() => setBranchDialog(true)}
-              >
-                <Plus size={14} /> {t("Nova branch")}{" "}
-              </button>
-            </section>
             <WorkspaceSplit
-              percent={preferences.historyPercent}
-              onResize={(historyPercent) =>
-                setPreferences((p) => ({ ...p, historyPercent }))
+              changesWidth={preferences.changesPanelWidth}
+              onResize={(changesPanelWidth) =>
+                setPreferences((p) => ({ ...p, changesPanelWidth }))
               }
               label={t("resizeWorkspace")}
               hint={t("resizeWorkspaceHint")}
@@ -984,59 +970,60 @@ function App() {
                   query ? t("RESULTADOS DA BUSCA") : t("GRAFO / MENSAGEM")
                 }
                 dateTitle={t("DATA")}
+                search={
+                  <div className="history-search">
+                    <Search size={13} />
+                    <input
+                      aria-label={t("Buscar commits")}
+                      placeholder={t("Buscar commit, autor ou hash…")}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                    />
+                    {query && (
+                      <button
+                        className="icon-button"
+                        aria-label={t("Limpar busca")}
+                        onClick={() => setQuery("")}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                }
                 hidden={!!selection}
               >
                 {(heading) => (
                   <>
-                    <div className="panel-heading">
-                      <span>
-                        <GitCommitHorizontal size={17} /> {t("Histórico")}{" "}
-                      </span>
-                      <span className="muted">
-                        {repo.commits.length} {t("commits")}{" "}
-                      </span>
-                    </div>
-                    <div className="search-wrap">
-                      <Search size={15} />
-                      <input
-                        aria-label={t("Buscar commits")}
-                        placeholder={t("Buscar commit, autor ou hash…")}
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                      {query && (
-                        <button
-                          className="icon-button"
-                          aria-label={t("Limpar busca")}
-                          onClick={() => setQuery("")}
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      className={`working-tree ${!commit ? "active" : ""}`}
-                      onClick={() => {
-                        setCommit(null);
-                        setSelection(null);
-                      }}
-                    >
-                      <div className="working-icon">
-                        <Layers size={17} />
-                      </div>
-                      <div>
-                        <strong> {t("Alterações locais")} </strong>
-                        <span>
-                          {repo.files.length
-                            ? t("Prepare seu próximo commit")
-                            : t("Nenhuma alteração pendente")}
-                        </span>
-                      </div>
-                      <span className="count">{repo.files.length}</span>
-                      <ChevronRight size={14} />
-                    </button>
                     {heading}
                     <div className="commit-list">
+                      {!query && (
+                        <button
+                          className={`commit-row wip-row ${!commit ? "selected" : ""}`}
+                          onClick={() => {
+                            setCommit(null);
+                            setSelection(null);
+                          }}
+                        >
+                          <div className="commit-refs" />
+                          {!query && (
+                            <div
+                              className="graph wip-graph"
+                              style={{ width: graphWidth }}
+                            >
+                              <span
+                                className="wip-dot"
+                                style={{ left: graphX(0) }}
+                              />
+                            </div>
+                          )}
+                          <div className="commit-text">
+                            <div className="commit-subject">
+                              {t("Alterações locais")}
+                            </div>
+                          </div>
+                          <span className="count">{repo.files.length}</span>
+                        </button>
+                      )}
                       {visibleCommits.map(({ commit: c, row }) => (
                         <button
                           key={c.hash}
@@ -1517,7 +1504,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.5.0</span>
+            <span className="statusbar-version">GITLOOM / 0.6.0</span>
           </span>
         </footer>
       </main>

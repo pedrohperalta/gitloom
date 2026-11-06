@@ -21,7 +21,7 @@ export type Preferences = {
   diffFontSize: number;
   sidebarWidth: number | null;
   sidebarCollapsed: boolean;
-  historyPercent: number;
+  changesPanelWidth: number;
   referenceColumnWidth: number;
   collapsedSidebarSections: string[];
 };
@@ -32,7 +32,7 @@ const defaults: Preferences = {
   diffFontSize: 12,
   sidebarWidth: null,
   sidebarCollapsed: false,
-  historyPercent: 58.33,
+  changesPanelWidth: 400,
   referenceColumnWidth: 150,
   collapsedSidebarSections: [],
 };
@@ -59,13 +59,13 @@ export function readPreferences(): Preferences {
             ),
           ].slice(0, 100)
         : [],
-      historyPercent:
-        typeof saved?.historyPercent === "number" &&
-        Number.isFinite(saved.historyPercent) &&
-        saved.historyPercent >= 20 &&
-        saved.historyPercent <= 80
-          ? saved.historyPercent
-          : defaults.historyPercent,
+      changesPanelWidth:
+        typeof saved?.changesPanelWidth === "number" &&
+        Number.isFinite(saved.changesPanelWidth) &&
+        saved.changesPanelWidth >= 300 &&
+        saved.changesPanelWidth <= 800
+          ? saved.changesPanelWidth
+          : defaults.changesPanelWidth,
       sidebarWidth:
         typeof saved?.sidebarWidth === "number" &&
         Number.isFinite(saved.sidebarWidth) &&

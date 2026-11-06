@@ -2,7 +2,7 @@
 
 Um cliente Git desktop para macOS, feito para acompanhar o histórico, revisar diffs e preparar commits em uma interface focada.
 
-**V1 · versão 0.5.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
+**V1 · versão 0.6.0** — React, TypeScript e Tauri 2. Usa o Git instalado na máquina, sem exigir conta ou serviço próprio do Gitloom.
 
 ![Workspace do Gitloom com diff e preparação de arquivos](docs/images/workspace.png)
 
@@ -63,7 +63,7 @@ O navegador não executa operações Git reais; o acesso aos arquivos e comandos
 npm run tauri -- build --bundles app
 ```
 
-O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. O instalador assina o app localmente (ad hoc) para o Gatekeeper não tratar o pacote como danificado. Assinatura Developer ID e notarização Apple não fazem parte da V1.
+O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. Quando `~/.gitloom-signing/notary.json` existe, o instalador assina o app com Developer ID, envia o DMG para a notarização da Apple e grampo o ticket. Sem essa configuração local, o script usa assinatura ad hoc. A chave e o certificado ficam fora do repositório.
 
 Para gerar o instalador macOS com a janela de instalação personalizada:
 
@@ -81,7 +81,7 @@ O script `scripts/tauri.mjs` usa o Rust do `PATH`. Se existir uma instalação i
 
 1. Abra um repositório local e consulte o histórico ou as alterações atuais.
    Use o botão no topo da barra lateral, ao lado da marca para recolher ou expandir a barra lateral. No modo recolhido, os atalhos de repositórios, abertura e configurações continuam disponíveis.
-   Arraste o divisor entre History e Changes para ajustar a proporção dos painéis, inclusive ao visualizar um diff. Com o divisor em foco, use as setas para ajustar (Shift para passos maiores), Home/End para os limites e Enter ou clique duplo para restaurar. O estado da barra lateral e a proporção escolhida são salvos entre sessões.
+   Arraste o divisor entre History e Changes para ajustar a largura do painel de alterações, inclusive ao visualizar um diff. O espaço que sobra fica no grafo, então monitores grandes mostram mais histórico em vez de alargar os dois painéis. Com o divisor em foco, use as setas para ajustar (Shift para passos maiores), Home/End para os limites e Enter ou clique duplo para restaurar. O estado da barra lateral e a largura escolhida são salvos entre sessões.
 2. Selecione um arquivo para revisar o diff no painel esquerdo.
 3. Use **+** para preparar o arquivo ou **−** para retirá-lo do stage. Em arquivos de texto modificados, use **Preparar hunk / Stage hunk** ou **Retirar hunk do stage / Unstage hunk** no cabeçalho do trecho para mover apenas aquela alteração.
 4. Escreva uma mensagem e faça o commit dos arquivos preparados.

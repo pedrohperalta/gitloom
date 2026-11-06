@@ -15,6 +15,7 @@ export function ReferenceColumn({
   title,
   messageTitle,
   dateTitle,
+  search,
   hidden,
   children,
 }: {
@@ -25,6 +26,7 @@ export function ReferenceColumn({
   title: string;
   messageTitle: string;
   dateTitle: string;
+  search: ReactNode;
   hidden: boolean;
   children: (heading: ReactNode) => ReactNode;
 }) {
@@ -61,7 +63,10 @@ export function ReferenceColumn({
               onReset={() => onResize(150)}
             />
           </span>
-          <span className="message-heading">{messageTitle}</span>
+          <span className="message-heading">
+            <span className="message-title">{messageTitle}</span>
+            {search}
+          </span>
           <span>{dateTitle}</span>
         </div>,
       )}

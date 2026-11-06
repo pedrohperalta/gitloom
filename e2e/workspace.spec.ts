@@ -312,9 +312,9 @@ test("open, inspect, stage, recover failed commit, commit, and create branch", a
   await page
     .getByRole("button", { name: "gitloom-playground", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: /gitloom-playground/ }),
-  ).toBeVisible();
+  await expect(page.locator(".breadcrumb strong")).toHaveText(
+    "gitloom-playground",
+  );
   await page
     .getByRole("button", { name: "M src/App.tsx", exact: true })
     .click();
@@ -637,13 +637,16 @@ test("preferences: spacing scales with text and sidebar resizing persists within
   const sidebar = page.locator(".sidebar");
   const divider = page.locator(".sidebar-resizer:not(.workspace-resizer)");
   await expect(sidebar).toHaveCSS("width", "342px");
-  await expect(page.locator(".commit-row").first()).toHaveCSS("height", "36px");
+  await expect(page.locator(".commit-row:not(.wip-row)").first()).toHaveCSS(
+    "height",
+    "36px",
+  );
   await expect(page.locator(".graph svg").first()).toHaveAttribute(
     "height",
     "36",
   );
   const subjectBox = (await page
-    .locator(".commit-subject")
+    .locator(".commit-row:not(.wip-row) .commit-subject")
     .first()
     .boundingBox())!;
   const authorBox = (await page.locator(".commit-meta").first().boundingBox())!;
@@ -741,11 +744,13 @@ test("preferences: spacing scales with text and sidebar resizing persists within
   await divider.focus();
   await page.keyboard.press("End");
   await expect(sidebar).toHaveCSS("width", "440px");
-  expect(
-    await page
-      .locator(".workspace")
-      .evaluate((workspace) => workspace.scrollWidth <= workspace.clientWidth),
-  ).toBe(true);
+  await expect
+    .poll(async () =>
+      page
+        .locator(".workspace")
+        .evaluate((workspace) => workspace.scrollWidth <= workspace.clientWidth),
+    )
+    .toBe(true);
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
@@ -997,6 +1002,19 @@ test("workspace proportions support drag, keyboard, persistence, diff and narrow
     exact: true,
   });
   const history = page.locator(".history-panel");
+  const changes = page.locator(".changes-panel");
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect(async () => {
+    const historyBox = (await history.boundingBox())!;
+    const changesBox = (await changes.boundingBox())!;
+    expect(changesBox.width).toBeGreaterThanOrEqual(390);
+    expect(changesBox.width).toBeLessThanOrEqual(420);
+    expect(historyBox.width).toBeGreaterThan(changesBox.width * 2);
+  }).toPass();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect
+    .poll(async () => (await history.boundingBox())!.width)
+    .toBeLessThan(1000);
   const initial = (await history.boundingBox())!.width;
   const box = (await divider.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 120);
@@ -1033,11 +1051,12 @@ test("workspace proportions support drag, keyboard, persistence, diff and narrow
   ).toBe(true);
   await page.screenshot({ path: "test-results/workspace-resized.png" });
   await divider.dblclick();
-  const percent = await page.evaluate(
+  const changesPanelWidth = await page.evaluate(
     () =>
-      JSON.parse(localStorage.getItem("gitloom.preferences")!).historyPercent,
+      JSON.parse(localStorage.getItem("gitloom.preferences")!)
+        .changesPanelWidth,
   );
-  expect(percent).toBe(58.33);
+  expect(changesPanelWidth).toBe(400);
 });
 
 test("long branch names remain fully visible without pushing toolbar actions out of view", async ({
@@ -1103,7 +1122,7 @@ test("reference column shows all decorations and graph uses committer photos wit
     .getByRole("button", { name: "gitloom-playground", exact: true })
     .click();
   await expect(page.locator(".refs-heading")).toHaveText("BRANCH / TAG");
-  const first = page.locator(".commit-row").first();
+  const first = page.locator(".commit-row:not(.wip-row)").first();
   await expect(first.locator(".commit-refs .ref-label")).toHaveText([
     "main",
     "origin/main",
@@ -1114,7 +1133,7 @@ test("reference column shows all decorations and graph uses committer photos wit
     "Maria Silva",
   );
   await expect(
-    page.locator(".commit-row").nth(1).locator(".commit-avatar"),
+    page.locator(".commit-row:not(.wip-row)").nth(1).locator(".commit-avatar"),
   ).toHaveText("OP");
   await expect(first.locator(".commit-meta")).toContainText("Pedro");
   await page
@@ -1319,11 +1338,13 @@ test("Branch / Tag column resizes with mouse and keyboard, retains width, and ex
   await page.keyboard.press("Enter");
   await expect(divider).toHaveAttribute("aria-valuenow", "150");
   await page.setViewportSize({ width: 1080, height: 680 });
-  expect(
-    await page
-      .locator(".workspace")
-      .evaluate((node) => node.scrollWidth <= node.clientWidth),
-  ).toBe(true);
+  await expect
+    .poll(async () =>
+      page
+        .locator(".workspace")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    )
+    .toBe(true);
 });
 
 test("sidebar sections and remote groups collapse independently and persist", async ({
@@ -1564,37 +1585,23 @@ for (const language of ["en", "pt-BR"]) {
           });
         expect(header.titleRight).toBeLessThanOrEqual(header.dateLeft);
         expect(header.dateRight).toBeLessThanOrEqual(header.containerRight);
-        const heading = await page
-          .locator(".workspace-heading")
-          .evaluate((node) => {
-            const center = (selector: string) => {
-              const rect = node
-                .querySelector(selector)!
-                .getBoundingClientRect();
-              return rect.top + rect.height / 2;
-            };
-            const title = node.querySelector("h1")!.getBoundingClientRect();
-            const button = node
-              .querySelector("button")!
-              .getBoundingClientRect();
-            const name = node.querySelector(".repo-name")!;
-            return {
-              height: node.getBoundingClientRect().height,
-              eyebrow: center(".eyebrow"),
-              title: center("h1"),
-              button: center("button"),
-              titleRight: title.right,
-              buttonLeft: button.left,
-              nameFits: name.scrollWidth <= name.clientWidth + 1,
-            };
-          });
-        expect(heading.height).toBeLessThanOrEqual(scale === 150 ? 52 : 40);
-        expect(Math.abs(heading.eyebrow - heading.title)).toBeLessThanOrEqual(
-          2,
-        );
-        expect(Math.abs(heading.button - heading.title)).toBeLessThanOrEqual(2);
-        expect(heading.titleRight).toBeLessThanOrEqual(heading.buttonLeft);
-        expect(heading.nameFits).toBe(true);
+        const graphStart = await page.evaluate(() => {
+          const panel = document
+            .querySelector(".history-panel")!
+            .getBoundingClientRect();
+          const columns = document
+            .querySelector(".history-columns")!
+            .getBoundingClientRect();
+          const wip = document
+            .querySelector(".wip-row")!
+            .getBoundingClientRect();
+          return {
+            columnsFromPanel: columns.top - panel.top,
+            wipFromColumns: wip.top - columns.bottom,
+          };
+        });
+        expect(graphStart.columnsFromPanel).toBeLessThanOrEqual(1);
+        expect(graphStart.wipFromColumns).toBeLessThanOrEqual(1);
         await page.screenshot({
           path: `test-results/ui-review-${language}-${scale}-${width}.png`,
         });

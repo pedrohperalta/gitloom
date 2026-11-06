@@ -56,7 +56,7 @@ describe("preferences", () => {
         diffFontSize: 12,
         sidebarWidth: null,
         sidebarCollapsed: false,
-        historyPercent: 58.33,
+        changesPanelWidth: 400,
         referenceColumnWidth: 150,
         collapsedSidebarSections: [],
       });
@@ -105,7 +105,8 @@ describe("preferences", () => {
   });
   it("reads explicit choices and resolves system theme", () => {
     vi.stubGlobal("localStorage", {
-      getItem: () => '{"theme":"darcula","language":"pt-BR"}',
+      getItem: () =>
+        '{"theme":"darcula","language":"pt-BR","historyPercent":70}',
     });
     expect(readPreferences()).toEqual({
       theme: "darcula",
@@ -114,7 +115,7 @@ describe("preferences", () => {
       diffFontSize: 12,
       sidebarWidth: null,
       sidebarCollapsed: false,
-      historyPercent: 58.33,
+      changesPanelWidth: 400,
       referenceColumnWidth: 150,
       collapsedSidebarSections: [],
     });

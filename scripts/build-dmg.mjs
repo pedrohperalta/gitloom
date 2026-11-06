@@ -7,7 +7,7 @@ import {
   renameSync,
   rmSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,14 +43,29 @@ const app = join(
   "src-tauri/target/release/bundle/macos",
   `${config.productName}.app`,
 );
-// Tauri's linker signature says resources are sealed, but the bundle has none.
-// Gatekeeper then reports the downloaded app as damaged. Ad-hoc sign the bundle
-// before packaging. This is not a Developer ID signature or notarization.
-run("codesign", ["--force", "--sign", "-", app]);
+const arch = process.arch === "arm64" ? "aarch64" : process.arch;
+const signing = loadSigning();
+if (signing) signWithDeveloperId(app, signing);
+else {
+  // Tauri's linker signature says resources are sealed, but the bundle has none.
+  // Gatekeeper then reports the downloaded app as damaged.
+  run("codesign", ["--force", "--sign", "-", app]);
+}
 run("codesign", ["--verify", "--deep", "--strict", app]);
+const zip = join(
+  root,
+  "src-tauri/target/release/bundle/macos",
+  `${config.productName}_${config.version}_${arch}.app.zip`,
+);
+if (signing) {
+  notarizeFile(zipFor(app, zip), signing);
+  run("xcrun", ["stapler", "staple", app]);
+  run("xcrun", ["stapler", "validate", app]);
+  rmSync(zip);
+  zipFor(app, zip);
+}
 const outputDir = join(root, "src-tauri/target/release/bundle/dmg");
 mkdirSync(outputDir, { recursive: true });
-const arch = process.arch === "arm64" ? "aarch64" : process.arch;
 const output = join(
   outputDir,
   `${config.productName}_${config.version}_${arch}.dmg`,
@@ -64,13 +79,88 @@ try {
     temporary,
   ]);
   renameSync(temporary, output);
-  removeFinderInfo(output, `${config.productName}.app`);
+  removeFinderInfo(output, `${config.productName}.app`, signing);
+  if (signing) {
+    notarizeFile(output, signing);
+    run("xcrun", ["stapler", "staple", output]);
+    run("xcrun", ["stapler", "validate", output]);
+  }
   console.log(`Installer created: ${output}`);
 } finally {
   rmSync(temporary, { force: true });
 }
 
-function removeFinderInfo(dmg, appName) {
+function loadSigning() {
+  const path = join(homedir(), ".gitloom-signing/notary.json");
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function signWithDeveloperId(bundle, signing) {
+  const password = readFileSync(signing.keychainPasswordFile, "utf8").trim();
+  run("security", ["unlock-keychain", "-p", password, signing.keychain]);
+  for (const binary of machOBinaries(bundle)) {
+    run("codesign", [
+      "--force",
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--sign",
+      signing.identity,
+      "--keychain",
+      signing.keychain,
+      binary,
+    ]);
+  }
+  run("codesign", [
+    "--force",
+    "--options",
+    "runtime",
+    "--timestamp",
+    "--sign",
+    signing.identity,
+    "--keychain",
+    signing.keychain,
+    "--entitlements",
+    join(root, "src-tauri/Entitlements.plist"),
+    bundle,
+  ]);
+}
+
+function machOBinaries(bundle) {
+  const found = spawnSync("find", [bundle, "-type", "f"], { encoding: "utf8" });
+  if (found.status !== 0) throw new Error("find failed while collecting binaries");
+  return found.stdout
+    .split("\n")
+    .filter(Boolean)
+    .filter((file) => {
+      const info = spawnSync("file", ["-b", file], { encoding: "utf8" });
+      return info.stdout.includes("Mach-O");
+    })
+    .sort((left, right) => right.length - left.length);
+}
+
+function zipFor(bundle, destination) {
+  run("ditto", ["-c", "-k", "--keepParent", bundle, destination]);
+  return destination;
+}
+
+function notarizeFile(file, signing) {
+  run("xcrun", [
+    "notarytool",
+    "submit",
+    file,
+    "--key",
+    signing.keyPath,
+    "--key-id",
+    signing.keyId,
+    "--issuer",
+    signing.issuerId,
+    "--wait",
+  ]);
+}
+
+function removeFinderInfo(dmg, appName, signing) {
   const work = mkdtempSync(join(tmpdir(), "gitloom-dmg-"));
   const writable = join(work, "rw.dmg");
   const mount = join(work, "mnt");
@@ -89,6 +179,8 @@ function removeFinderInfo(dmg, appName) {
     try {
       run("xattr", ["-d", "com.apple.FinderInfo", join(mount, appName)]);
       run("codesign", ["--verify", "--deep", "--strict", join(mount, appName)]);
+      if (signing)
+        run("xcrun", ["stapler", "validate", join(mount, appName)]);
     } finally {
       run("hdiutil", ["detach", mount]);
     }
