@@ -145,6 +145,8 @@ test.beforeEach(async ({ page }, testInfo) => {
       repo.behind = 3;
     }
     if (params.has("no-upstream")) repo.upstream = "";
+    if (params.has("clean")) repo.files = [];
+    if (params.has("several-remotes")) repo.remotes = ["upstream", "fork"];
     if (params.has("ui-review")) {
       repo.branches.push({
         name: "origin/feature/review",
@@ -748,7 +750,9 @@ test("preferences: spacing scales with text and sidebar resizing persists within
     .poll(async () =>
       page
         .locator(".workspace")
-        .evaluate((workspace) => workspace.scrollWidth <= workspace.clientWidth),
+        .evaluate(
+          (workspace) => workspace.scrollWidth <= workspace.clientWidth,
+        ),
     )
     .toBe(true);
   await page.keyboard.press("ArrowLeft");
@@ -897,6 +901,22 @@ for (const [state, command] of [
   });
 }
 
+test("a clean working tree starts the graph at the latest commit", async ({
+  page,
+}) => {
+  await page.goto("/?clean");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  await expect(page.locator(".wip-row")).toHaveCount(0);
+  await expect(page.locator(".commit-row").first()).toContainText(
+    "Merge feature/diff-view into main",
+  );
+  await expect(
+    page.getByRole("region", { name: "Para preparar" }),
+  ).toContainText("0");
+});
+
 test("divergence, missing upstream and authentication failures explain next steps", async ({
   page,
 }) => {
@@ -907,7 +927,7 @@ test("divergence, missing upstream and authentication failures explain next step
   await expect(page.locator(".repository-guidance")).toContainText(
     "histórico local e remoto divergiu",
   );
-  await expect(page.locator(".repository-guidance")).toContainText(
+  await expect(page.locator(".repository-guidance")).not.toContainText(
     "não tem upstream",
   );
   await expect(page.getByRole("button", { name: /^Pull/ })).toBeDisabled();
@@ -916,6 +936,20 @@ test("divergence, missing upstream and authentication failures explain next step
   await expect(page.getByRole("alert")).toContainText(
     "fatal: Authentication failed for remote",
   );
+  await page.goto("/?no-upstream&several-remotes");
+  await page
+    .getByRole("button", { name: "gitloom-playground", exact: true })
+    .click();
+  const guidance = page.locator(".repository-guidance");
+  await expect(guidance).toContainText("mais de um remoto");
+  const gap = await guidance.evaluate((banner) => {
+    const history = document
+      .querySelector(".history-panel")!
+      .getBoundingClientRect();
+    return history.top - banner.getBoundingClientRect().bottom;
+  });
+  expect(gap).toBeGreaterThanOrEqual(12);
+  expect(gap).toBeLessThanOrEqual(16);
 });
 
 test("draft storage failure keeps the typed message and shows a warning", async ({

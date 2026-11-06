@@ -52,6 +52,10 @@ import { errorGuidance } from "./gitGuidance";
 import "./App.css";
 
 type Recent = { path: string; name: string };
+function implicitPushRemote(remotes: string[]) {
+  if (remotes.includes("origin")) return "origin";
+  return remotes.length === 1 ? remotes[0] : null;
+}
 function readRecents(): Recent[] {
   try {
     const data = JSON.parse(localStorage.getItem("ramo.recents") || "[]");
@@ -888,9 +892,11 @@ function App() {
                 {repo.ahead > 0 && repo.behind > 0 && (
                   <p>{t("divergenceGuidance")}</p>
                 )}
-                {!repo.upstream && repo.remotes.length > 0 && (
-                  <p>{t("missingUpstream")}</p>
-                )}
+                {!repo.upstream &&
+                  repo.remotes.length > 1 &&
+                  !implicitPushRemote(repo.remotes) && (
+                    <p>{t("missingUpstream")}</p>
+                  )}
               </div>
             </div>
           )}
@@ -996,7 +1002,7 @@ function App() {
                   <>
                     {heading}
                     <div className="commit-list">
-                      {!query && (
+                      {!query && repo.files.length > 0 && (
                         <button
                           className={`commit-row wip-row ${!commit ? "selected" : ""}`}
                           onClick={() => {
@@ -1504,7 +1510,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.6.0</span>
+            <span className="statusbar-version">GITLOOM / 0.7.0</span>
           </span>
         </footer>
       </main>

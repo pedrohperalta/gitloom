@@ -224,7 +224,7 @@ export const en = {
   finishOperation:
     "Finish or abort the current Git operation in your terminal, then refresh the repository.",
   missingUpstream:
-    "This branch has no upstream. The first push sets it using origin or the only remote. For another destination, configure tracking in Git. Pull requires an upstream.",
+    "This branch has no upstream, and the repository has more than one remote. Configure tracking in Git before pushing. Pull requires an upstream.",
   authGuidance:
     "Check this remote’s SSH agent or Git credential helper in your terminal, then retry. Gitloom uses your existing Git authentication.",
   divergenceGuidance:

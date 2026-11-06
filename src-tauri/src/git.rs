@@ -7,6 +7,32 @@ use std::{
     time::{Duration, Instant},
 };
 const MAX_OUTPUT: u64 = 12 * 1024 * 1024;
+fn configured_upstream(root: &Path) -> Option<String> {
+    let branch = run(root, &["symbolic-ref", "--short", "HEAD"], None).ok()?;
+    let branch = branch.trim();
+    let remote = run(
+        root,
+        &["config", "--get", &format!("branch.{branch}.remote")],
+        None,
+    )
+    .ok()?;
+    let merge = run(
+        root,
+        &["config", "--get", &format!("branch.{branch}.merge")],
+        None,
+    )
+    .ok()?;
+    let remote = remote.trim();
+    let short = merge.trim().strip_prefix("refs/heads/").unwrap_or(merge.trim());
+    if remote.is_empty() || short.is_empty() {
+        return None;
+    }
+    if remote == "." {
+        Some(short.to_owned())
+    } else {
+        Some(format!("{remote}/{short}"))
+    }
+}
 fn git_binary() -> &'static str {
     for path in [
         "/opt/homebrew/bin/git",
@@ -354,7 +380,9 @@ pub fn repository(path: &str, limit: usize) -> Result<Repository, String> {
     commits.truncate(limit);
     let upstream = run(&root, &["rev-parse", "--abbrev-ref", "@{upstream}"], None)
         .ok()
-        .map(|value| value.trim().to_owned());
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .or_else(|| configured_upstream(&root));
     let head_detached = run(&root, &["symbolic-ref", "-q", "HEAD"], None).is_err();
     let counts = run(
         &root,
@@ -1514,6 +1542,23 @@ mod tests {
         let (dir, _) = separated_changes();
         let repo = repository(path(&dir), 100).unwrap();
         assert!(repo.upstream.is_none());
+        run(
+            dir.path(),
+            &["remote", "add", "origin", "https://example.com/repo.git"],
+            None,
+        )
+        .unwrap();
+        run(dir.path(), &["config", "branch.main.remote", "origin"], None).unwrap();
+        run(
+            dir.path(),
+            &["config", "branch.main.merge", "refs/heads/main"],
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            repository(path(&dir), 100).unwrap().upstream.as_deref(),
+            Some("origin/main")
+        );
         assert!(repo.operation.is_none());
         assert!(!repo.head_detached);
         let head = run(dir.path(), &["rev-parse", "HEAD"], None).unwrap();

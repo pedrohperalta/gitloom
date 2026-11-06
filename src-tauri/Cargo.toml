@@ -1,6 +1,6 @@
 [package]
 name = "gitloom"
-version = "0.6.0"
+version = "0.7.0"
 description = "A focused local Git client"
 edition = "2024"
 

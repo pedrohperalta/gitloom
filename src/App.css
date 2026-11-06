@@ -1042,7 +1042,7 @@ kbd {
   margin-top: 45px;
 }
 .banner {
-  margin: 12px 28px 0;
+  margin: 12px 28px;
   border: 1px solid var(--warning-border);
   background: var(--warning-bg);
   color: var(--warning);

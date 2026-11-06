@@ -229,7 +229,7 @@ export const ptBR: Record<MessageKey, string> = {
   finishOperation:
     "Conclua ou aborte a operação Git atual pelo terminal e atualize o repositório.",
   missingUpstream:
-    "Esta branch não tem upstream. O primeiro push configura origin ou o único remoto. Para outro destino, configure o tracking pelo Git. Pull exige upstream.",
+    "Esta branch não tem upstream e o repositório tem mais de um remoto. Configure o tracking pelo Git antes de enviar. Pull exige upstream.",
   authGuidance:
     "Verifique o SSH agent ou credential helper deste remoto pelo terminal e tente novamente. O Gitloom usa sua autenticação Git existente.",
   divergenceGuidance:
