@@ -12,6 +12,7 @@ export const themes = [
 ] as const;
 export type Theme = (typeof themes)[number];
 export const textScales = [100, 110, 125, 140, 150] as const;
+export const historyRowBase = 24;
 export const diffFontSizes = [10, 11, 12, 13, 14, 16, 18, 20, 24] as const;
 export type Preferences = {
   theme: Theme;
@@ -108,7 +109,7 @@ export function applyPreferences(preferences: Preferences) {
   );
   document.documentElement.style.setProperty(
     "--history-row-height",
-    `${Math.round((48 * preferences.textScale) / 100)}px`,
+    `${Math.round((historyRowBase * preferences.textScale) / 100)}px`,
   );
   document.title = createTranslator(preferences.language)("appTitle");
   return resolved;

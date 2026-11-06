@@ -43,7 +43,7 @@ import {
   type MessageKey,
   type MessageParams,
 } from "./i18n";
-import { textScales, usePreferences } from "./preferences";
+import { historyRowBase, textScales, usePreferences } from "./preferences";
 import { WorkspaceSplit } from "./WorkspaceSplit";
 import { SidebarDivider } from "./SidebarDivider";
 import { SettingsDialog } from "./SettingsDialog";
@@ -76,15 +76,16 @@ const paths = (files: FileChange[]) => [
     ),
   ),
 ];
+const graphLane = 14;
+const graphInset = 8;
+const graphX = (column: number) => graphInset + column * graphLane;
+const graphWidthFor = (columns: number) =>
+  Math.max(graphInset * 2, graphInset + columns * graphLane);
 function Graph({
   row,
   width,
   height,
-  commit,
-  repository,
 }: {
-  commit: Commit;
-  repository?: string | null;
   row: GraphRow;
   width: number;
   height: number;
@@ -98,7 +99,6 @@ function Graph({
     if (ref.current?.parentElement) observer.observe(ref.current.parentElement);
     return () => observer.disconnect();
   }, []);
-  const x = (column: number) => 22 + column * 32;
   return (
     <div ref={ref} className="graph" style={{ width }}>
       <svg width={width} height={rowHeight} aria-hidden="true">
@@ -108,25 +108,22 @@ function Graph({
           return (
             <path
               key={i}
-              d={`M ${x(e.from)} ${y1} C ${x(e.from)} ${(y1 + y2) / 2}, ${x(e.to)} ${(y1 + y2) / 2}, ${x(e.to)} ${y2}`}
+              d={`M ${graphX(e.from)} ${y1} C ${graphX(e.from)} ${(y1 + y2) / 2}, ${graphX(e.to)} ${(y1 + y2) / 2}, ${graphX(e.to)} ${y2}`}
               stroke={e.color}
               strokeWidth="2"
               fill="none"
-              opacity=".7"
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
           );
         })}
+        <circle
+          cx={graphX(row.column)}
+          cy={rowHeight / 2}
+          r="3.5"
+          fill={row.color}
+        />
       </svg>
-      <div
-        className="graph-avatar"
-        style={{
-          left: x(row.column),
-          top: rowHeight / 2,
-          borderColor: row.color,
-        }}
-      >
-        <CommitAvatar commit={commit} repository={repository} />
-      </div>
     </div>
   );
 }
@@ -161,7 +158,9 @@ function App() {
         Math.round((228 * preferences.textScale) / 100),
     ),
   );
-  const historyRowHeight = Math.round((48 * preferences.textScale) / 100);
+  const historyRowHeight = Math.round(
+    (historyRowBase * preferences.textScale) / 100,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const date = (value: string) =>
     new Date(value).toLocaleDateString(
@@ -225,7 +224,7 @@ function App() {
     () => layoutGraph(repo?.commits || []),
     [repo?.commits],
   );
-  const graphWidth = Math.max(64, graph.columns * 32 + 12);
+  const graphWidth = graphWidthFor(graph.columns);
   const visibleCommits = useMemo(
     () =>
       (repo?.commits || [])
@@ -937,22 +936,20 @@ function App() {
         ) : (
           <>
             <section className="workspace-heading">
-              <div>
-                <div className="eyebrow">WORKSPACE</div>
-                <h1>
-                  {repo.name}
-                  <span className="repo-state">
-                    {repo.files.length
-                      ? t(
-                          repo.files.length === 1
-                            ? "changedFile"
-                            : "changedFiles",
-                          { count: repo.files.length },
-                        )
-                      : t("Tudo em dia")}
-                  </span>
-                </h1>
-              </div>
+              <div className="eyebrow">WORKSPACE</div>
+              <h1>
+                <span className="repo-name">{repo.name}</span>
+                <span className="repo-state">
+                  {repo.files.length
+                    ? t(
+                        repo.files.length === 1
+                          ? "changedFile"
+                          : "changedFiles",
+                        { count: repo.files.length },
+                      )
+                    : t("Tudo em dia")}
+                </span>
+              </h1>
               <button
                 className="quiet-button"
                 disabled={!!busy || operationBlocksNavigation}
@@ -1068,8 +1065,6 @@ function App() {
                           </div>
                           {!query && (
                             <Graph
-                              commit={c}
-                              repository={repo.githubRepository}
                               row={row}
                               width={graphWidth}
                               height={historyRowHeight}
@@ -1086,8 +1081,14 @@ function App() {
                           <div className="commit-text">
                             <div className="commit-subject">{c.subject}</div>
                             <div className="commit-meta">
+                              {!query && (
+                                <CommitAvatar
+                                  commit={c}
+                                  repository={repo.githubRepository}
+                                />
+                              )}
+                              <span className="commit-author">{c.author}</span>
                               <span className="hash">{c.hash.slice(0, 7)}</span>
-                              <span>{c.author}</span>
                             </div>
                           </div>
                           <time>{date(c.date)}</time>
@@ -1516,7 +1517,7 @@ function App() {
           </div>
           <span title={repo?.path}>
             {repo?.path || t("Feito para manter o foco")}{" "}
-            <span className="statusbar-version">GITLOOM / 0.4.0</span>
+            <span className="statusbar-version">GITLOOM / 0.5.0</span>
           </span>
         </footer>
       </main>

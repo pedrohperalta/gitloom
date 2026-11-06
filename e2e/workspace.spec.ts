@@ -637,11 +637,33 @@ test("preferences: spacing scales with text and sidebar resizing persists within
   const sidebar = page.locator(".sidebar");
   const divider = page.locator(".sidebar-resizer:not(.workspace-resizer)");
   await expect(sidebar).toHaveCSS("width", "342px");
-  await expect(page.locator(".commit-row").first()).toHaveCSS("height", "72px");
+  await expect(page.locator(".commit-row").first()).toHaveCSS("height", "36px");
   await expect(page.locator(".graph svg").first()).toHaveAttribute(
     "height",
-    "72",
+    "36",
   );
+  const subjectBox = (await page
+    .locator(".commit-subject")
+    .first()
+    .boundingBox())!;
+  const authorBox = (await page.locator(".commit-meta").first().boundingBox())!;
+  expect(
+    Math.abs(
+      subjectBox.y +
+        subjectBox.height / 2 -
+        (authorBox.y + authorBox.height / 2),
+    ),
+  ).toBeLessThanOrEqual(1);
+  const dot = (await page.locator(".graph circle").first().boundingBox())!;
+  expect(dot.width).toBeGreaterThan(5);
+  expect(dot.width).toBeLessThan(10);
+  const lanes = await page
+    .locator(".graph circle")
+    .evaluateAll((nodes) =>
+      nodes.slice(0, 3).map((node) => Number(node.getAttribute("cx"))),
+    );
+  expect(new Set(lanes).size).toBeGreaterThan(1);
+  expect(Math.max(...lanes) - Math.min(...lanes)).toBeLessThanOrEqual(28);
   await expect(page.locator(".file-row").first()).toHaveCSS("height", "48px");
   const graphRows = await page.locator(".graph").evaluateAll((nodes) =>
     nodes.slice(0, 2).map((node) => {
@@ -1542,17 +1564,46 @@ for (const language of ["en", "pt-BR"]) {
           });
         expect(header.titleRight).toBeLessThanOrEqual(header.dateLeft);
         expect(header.dateRight).toBeLessThanOrEqual(header.containerRight);
+        const heading = await page
+          .locator(".workspace-heading")
+          .evaluate((node) => {
+            const center = (selector: string) => {
+              const rect = node
+                .querySelector(selector)!
+                .getBoundingClientRect();
+              return rect.top + rect.height / 2;
+            };
+            const title = node.querySelector("h1")!.getBoundingClientRect();
+            const button = node
+              .querySelector("button")!
+              .getBoundingClientRect();
+            const name = node.querySelector(".repo-name")!;
+            return {
+              height: node.getBoundingClientRect().height,
+              eyebrow: center(".eyebrow"),
+              title: center("h1"),
+              button: center("button"),
+              titleRight: title.right,
+              buttonLeft: button.left,
+              nameFits: name.scrollWidth <= name.clientWidth + 1,
+            };
+          });
+        expect(heading.height).toBeLessThanOrEqual(scale === 150 ? 52 : 40);
+        expect(Math.abs(heading.eyebrow - heading.title)).toBeLessThanOrEqual(
+          2,
+        );
+        expect(Math.abs(heading.button - heading.title)).toBeLessThanOrEqual(2);
+        expect(heading.titleRight).toBeLessThanOrEqual(heading.buttonLeft);
+        expect(heading.nameFits).toBe(true);
         await page.screenshot({
           path: `test-results/ui-review-${language}-${scale}-${width}.png`,
         });
         await page.locator(".sidebar").evaluate((node) => {
           node.scrollTop = node.scrollHeight;
         });
-        await page
-          .locator(".sidebar")
-          .screenshot({
-            path: `test-results/ui-review-${language}-${scale}-${width}-sidebar-bottom.png`,
-          });
+        await page.locator(".sidebar").screenshot({
+          path: `test-results/ui-review-${language}-${scale}-${width}-sidebar-bottom.png`,
+        });
       });
     }
   }

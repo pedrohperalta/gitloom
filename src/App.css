@@ -341,36 +341,45 @@ kbd {
   color: var(--muted);
 }
 .workspace-heading {
-  padding: 27px 28px 23px;
+  padding: 6px 28px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   flex-shrink: 0;
 }
 .eyebrow {
   color: var(--muted);
   font-size: 0.692308rem;
   font-weight: 600;
-  letter-spacing: 1.6px;
-  margin-bottom: 8px;
+  letter-spacing: 1.2px;
+  flex-shrink: 0;
 }
 .workspace-heading h1 {
   font-weight: 600;
-  font-size: 1.923077rem;
-  letter-spacing: -0.8px;
+  font-size: 1rem;
+  letter-spacing: 0;
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.repo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .repo-state {
-  font-size: 0.769231rem;
+  flex-shrink: 0;
+  font-size: 0.692308rem;
   letter-spacing: 0;
   font-weight: 400;
   border: 1px solid var(--border);
   color: var(--muted);
   border-radius: 20px;
-  padding: 5px 9px;
+  padding: 1px 8px;
 }
 .quiet-button {
   border: 1px solid var(--border);
@@ -379,6 +388,11 @@ kbd {
   padding: 9px 11px;
   font-size: 0.846154rem;
   color: var(--muted);
+}
+.workspace-heading .quiet-button {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  white-space: nowrap;
 }
 .workspace {
   flex: 1;
@@ -512,15 +526,16 @@ kbd {
   min-height: 0;
 }
 .commit-row {
-  min-height: var(--history-row-height, 48px);
+  min-height: var(--history-row-height, 24px);
   width: 100%;
   display: flex;
   justify-content: flex-start;
+  align-items: center;
   text-align: left;
   gap: 0;
   box-shadow: inset 0 -1px var(--border);
   border-left: 2px solid transparent;
-  padding: 0 14px 0 0;
+  padding: 0 12px 0 0;
   min-width: 0;
 }
 .commit-row.selected {
@@ -530,9 +545,6 @@ kbd {
 .commit-row:not(:disabled):hover {
   background: var(--surface-alt);
 }
-.commit-row.selected .graph {
-  --surface: var(--selected);
-}
 .graph {
   flex-shrink: 0;
   overflow: visible;
@@ -540,29 +552,44 @@ kbd {
 .commit-text {
   flex: 1;
   min-width: 0;
-  padding-right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 8px;
 }
 .commit-subject {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.846154rem;
   color: var(--text);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  line-height: 1.6;
+  line-height: 1.25;
   font-weight: 500;
 }
 .commit-meta {
   display: flex;
   align-items: center;
-  gap: 9px;
+  flex: 0 1 220px;
+  gap: 6px;
   min-width: 0;
   font-size: 0.692308rem;
   color: var(--muted);
-  margin-top: 2px;
   white-space: nowrap;
+}
+.commit-author {
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commit-meta .commit-avatar {
+  width: 1.230769rem;
+  height: 1.230769rem;
+  flex-shrink: 0;
 }
 .hash {
+  flex-shrink: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted);
 }
@@ -1230,7 +1257,7 @@ kbd {
     padding: 0 20px;
   }
   .workspace-heading {
-    padding: 22px 20px;
+    padding: 6px 18px;
   }
   .repo-state {
     display: none;
@@ -1860,9 +1887,9 @@ kbd {
   flex-wrap: wrap;
   align-content: center;
   align-items: center;
-  padding-top: 7px;
-  padding-bottom: 7px;
-  gap: 4px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  gap: 3px;
   overflow: visible;
   border-right: 1px solid var(--border);
 }
@@ -1886,15 +1913,6 @@ kbd {
   position: absolute;
   inset: 0;
 }
-.graph-avatar {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  border: 2px solid;
-  border-radius: 50%;
-  background: var(--surface);
-  width: 28px;
-  height: 28px;
-}
 .commit-avatar {
   display: grid;
   place-items: center;
@@ -1904,7 +1922,7 @@ kbd {
   overflow: hidden;
   background: var(--surface-alt);
   color: var(--text);
-  font-size: 9px;
+  font-size: 0.54rem;
   font-weight: 650;
   line-height: 1;
 }
@@ -1914,10 +1932,10 @@ kbd {
   object-fit: cover;
 }
 .search-avatar {
-  width: 28px;
-  height: 28px;
+  width: 1.230769rem;
+  height: 1.230769rem;
   flex-shrink: 0;
-  margin: 0 14px;
+  margin: 0 8px 0 10px;
 }
 .sidebar-item {
   display: flex;
