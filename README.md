@@ -63,7 +63,7 @@ O navegador não executa operações Git reais; o acesso aos arquivos e comandos
 npm run tauri -- build --bundles app
 ```
 
-O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. Esta configuração gera um build local; assinatura e notarização para distribuição não fazem parte da V1.
+O bundle fica em `src-tauri/target/release/bundle/macos/Gitloom.app`. O instalador assina o app localmente (ad hoc) para o Gatekeeper não tratar o pacote como danificado. Assinatura Developer ID e notarização Apple não fazem parte da V1.
 
 Para gerar o instalador macOS com a janela de instalação personalizada:
 

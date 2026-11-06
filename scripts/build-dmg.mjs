@@ -2,10 +2,12 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +38,16 @@ run(python, [
 const config = JSON.parse(
   readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"),
 );
+const app = join(
+  root,
+  "src-tauri/target/release/bundle/macos",
+  `${config.productName}.app`,
+);
+// Tauri's linker signature says resources are sealed, but the bundle has none.
+// Gatekeeper then reports the downloaded app as damaged. Ad-hoc sign the bundle
+// before packaging. This is not a Developer ID signature or notarization.
+run("codesign", ["--force", "--sign", "-", app]);
+run("codesign", ["--verify", "--deep", "--strict", app]);
 const outputDir = join(root, "src-tauri/target/release/bundle/dmg");
 mkdirSync(outputDir, { recursive: true });
 const arch = process.arch === "arm64" ? "aarch64" : process.arch;
@@ -52,7 +64,38 @@ try {
     temporary,
   ]);
   renameSync(temporary, output);
+  removeFinderInfo(output, `${config.productName}.app`);
   console.log(`Installer created: ${output}`);
 } finally {
   rmSync(temporary, { force: true });
+}
+
+function removeFinderInfo(dmg, appName) {
+  const work = mkdtempSync(join(tmpdir(), "gitloom-dmg-"));
+  const writable = join(work, "rw.dmg");
+  const mount = join(work, "mnt");
+  const compressed = join(work, "fixed.dmg");
+  mkdirSync(mount);
+  try {
+    run("hdiutil", ["convert", dmg, "-format", "UDRW", "-o", writable]);
+    run("hdiutil", [
+      "attach",
+      "-nobrowse",
+      "-readwrite",
+      "-mountpoint",
+      mount,
+      writable,
+    ]);
+    try {
+      run("xattr", ["-d", "com.apple.FinderInfo", join(mount, appName)]);
+      run("codesign", ["--verify", "--deep", "--strict", join(mount, appName)]);
+    } finally {
+      run("hdiutil", ["detach", mount]);
+    }
+    run("hdiutil", ["convert", writable, "-format", "UDZO", "-o", compressed]);
+    rmSync(dmg);
+    renameSync(compressed, dmg);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
